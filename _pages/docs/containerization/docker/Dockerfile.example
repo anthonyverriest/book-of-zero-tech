@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1
+
+ARG PYTHON_VERSION=3.13
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:latest
+ARG UID=90001
+ARG PORT=8080
+ARG PACKAGE_NAME=myapp
+ARG BUILD_DATE=""
+ARG VCS_REF=""
+ARG VCS_URL=""
+
+FROM ${UV_IMAGE} AS uv
+
+FROM python:${PYTHON_VERSION}-slim AS builder
+COPY --from=uv /uv /uvx /bin/
+
+ARG PACKAGE_NAME
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project --no-editable
+
+COPY pyproject.toml uv.lock ./
+COPY ${PACKAGE_NAME} ./${PACKAGE_NAME}
+COPY main.py ./
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-editable
+
+FROM python:${PYTHON_VERSION}-slim
+
+ARG UID
+ARG PORT
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VCS_URL
+ARG PACKAGE_NAME
+
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.source="${VCS_URL}"
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/nonexistent" \
+    --shell "/sbin/nologin" \
+    --no-create-home \
+    --uid "${UID}" \
+    appuser
+
+WORKDIR /app
+
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
+COPY --from=builder --chown=appuser:appuser /app/${PACKAGE_NAME} /app/${PACKAGE_NAME}
+COPY --from=builder --chown=appuser:appuser /app/main.py /app/main.py
+
+USER appuser
+
+ENV ENVIRONMENT=dev
+ENV LOG_LEVEL=INFO
+
+# Optional: Add a healthcheck if your application is a web service
+# (Note: curl is not installed in python:slim by default, so you may need to apt-get install it, 
+# or use a python-based healthcheck)
+# HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+#     CMD curl -f http://localhost:${PORT}/health || exit 1
+
+EXPOSE ${PORT}
+
+CMD ["/app/.venv/bin/python", "main.py"]

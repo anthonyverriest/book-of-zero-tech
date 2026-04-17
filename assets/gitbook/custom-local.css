@@ -1,0 +1,354 @@
+/* Book of Zero overrides: Catppuccin code theme + copy button UI */
+
+/* ──────────────────────────────────────────────────────────────
+   Catppuccin palettes
+   - Latte for light (default)
+   - Mocha for dark (GitBook "night" theme: `.book.color-theme-2`)
+   ────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Latte */
+  --cp-bg: #eff1f5;
+  --cp-mantle: #e6e9ef;
+  --cp-crust: #dce0e8;
+  --cp-surface0: #ccd0da;
+  --cp-surface1: #bcc0cc;
+  --cp-overlay1: #8c8fa1;
+  --cp-text: #4c4f69;
+  --cp-subtext0: #6c6f85;
+  --cp-blue: #1e66f5;
+  --cp-lavender: #7287fd;
+  --cp-sapphire: #209fb5;
+  --cp-teal: #179299;
+  --cp-green: #40a02b;
+  --cp-yellow: #df8e1d;
+  --cp-peach: #fe640b;
+  --cp-red: #d20f39;
+  --cp-mauve: #8839ef;
+}
+
+.book.color-theme-2 {
+  /* Mocha */
+  --cp-bg: #1e1e2e;
+  --cp-mantle: #181825;
+  --cp-crust: #11111b;
+  --cp-surface0: #313244;
+  --cp-surface1: #45475a;
+  --cp-overlay1: #7f849c;
+  --cp-text: #cdd6f4;
+  --cp-subtext0: #a6adc8;
+  --cp-blue: #89b4fa;
+  --cp-lavender: #b4befe;
+  --cp-sapphire: #74c7ec;
+  --cp-teal: #94e2d5;
+  --cp-green: #a6e3a1;
+  --cp-yellow: #f9e2af;
+  --cp-peach: #fab387;
+  --cp-red: #f38ba8;
+  --cp-mauve: #cba6f7;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Code blocks: layout + contrast
+   ────────────────────────────────────────────────────────────── */
+
+.markdown-section pre {
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--cp-surface0), transparent 20%);
+  background: var(--cp-bg);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--cp-crust), transparent 90%);
+}
+
+.markdown-section pre code {
+  font-size: 0.9em;
+  line-height: 1.55;
+  color: var(--cp-text);
+}
+
+/* Inline code */
+.markdown-section :not(pre) > code {
+  background: color-mix(in srgb, var(--cp-bg), transparent 35%);
+  border: 1px solid color-mix(in srgb, var(--cp-surface0), transparent 25%);
+  border-radius: 6px;
+  padding: 0.15em 0.35em;
+  color: var(--cp-text);
+}
+
+/* Selection inside code blocks */
+.markdown-section pre ::selection {
+  background: color-mix(in srgb, var(--cp-blue), transparent 70%);
+}
+
+/* Remove any per-line overlays (e.g. highlighted lines/rows) */
+.highlight .hll,
+.highlight .line,
+.highlight .lineno,
+.highlight .gl {
+  background: transparent !important;
+}
+
+.highlight table,
+.highlight tbody,
+.highlight tr,
+.highlight td,
+.highlight th,
+.highlight .rouge-table,
+.highlight .rouge-gutter,
+.highlight .rouge-code {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+.markdown-section pre,
+.markdown-section pre code,
+.markdown-section pre code span {
+  background-image: none !important;
+}
+
+/* Dark mode (night): some Rouge themes add row overlays via nested spans/tables */
+.book.color-theme-2 .markdown-section pre code,
+.book.color-theme-2 .markdown-section pre code span,
+.book.color-theme-2 .highlight pre,
+.book.color-theme-2 .highlight code,
+.book.color-theme-2 .highlight .rouge-table,
+.book.color-theme-2 .highlight .rouge-gutter,
+.book.color-theme-2 .highlight .rouge-code {
+  background-color: transparent !important;
+}
+
+.book.color-theme-2 .markdown-section pre {
+  background-color: var(--cp-bg) !important;
+  background-image: none !important;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Rouge token colors (Catppuccin)
+   Works with GitBook theme's Rouge HTML output under `.highlight`.
+   ────────────────────────────────────────────────────────────── */
+
+.highlight,
+.highlight pre,
+.highlight code {
+  color: var(--cp-text);
+}
+
+/* Comments */
+.highlight .c,
+.highlight .cm,
+.highlight .c1,
+.highlight .cs,
+.highlight .cp {
+  color: var(--cp-overlay1);
+  font-style: italic;
+}
+
+/* Keywords / control flow */
+.highlight .k,
+.highlight .kd,
+.highlight .kn,
+.highlight .kp,
+.highlight .kr,
+.highlight .kt,
+.highlight .kc {
+  color: var(--cp-mauve);
+}
+
+/* Strings */
+.highlight .s,
+.highlight .s1,
+.highlight .s2,
+.highlight .sb,
+.highlight .sc,
+.highlight .sd,
+.highlight .se,
+.highlight .sh,
+.highlight .si,
+.highlight .sx,
+.highlight .sr,
+.highlight .ss {
+  color: var(--cp-green);
+}
+
+/* Numbers */
+.highlight .m,
+.highlight .mi,
+.highlight .mf,
+.highlight .mh,
+.highlight .mo,
+.highlight .mb,
+.highlight .mx,
+.highlight .il {
+  color: var(--cp-peach);
+}
+
+/* Names: functions/classes/constants */
+.highlight .nf {
+  color: var(--cp-blue);
+}
+
+.highlight .nc,
+.highlight .nn,
+.highlight .ne {
+  color: var(--cp-lavender);
+}
+
+.highlight .no,
+.highlight .nv,
+.highlight .na {
+  color: var(--cp-yellow);
+}
+
+/* Builtins */
+.highlight .nb,
+.highlight .bp {
+  color: var(--cp-sapphire);
+}
+
+/* CLI flags/options (e.g. `--mount`, `--env`): Rouge often classifies as `nt` */
+.highlight .nt,
+.highlight .nl,
+.highlight .nx {
+  color: var(--cp-sapphire);
+}
+
+/* Operators / punctuation */
+.highlight .o,
+.highlight .ow {
+  color: var(--cp-teal);
+}
+
+.highlight .p {
+  color: color-mix(in srgb, var(--cp-text), transparent 10%);
+}
+
+/* Errors */
+.highlight .err {
+  color: var(--cp-red);
+  background: color-mix(in srgb, var(--cp-red), transparent 85%);
+}
+
+/* Diffs */
+.highlight .gi {
+  background: color-mix(in srgb, var(--cp-green), transparent 88%);
+}
+.highlight .gd {
+  background: color-mix(in srgb, var(--cp-red), transparent 88%);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Copy button: icon-only (GitBook-ish), shows on hover/focus
+   ────────────────────────────────────────────────────────────── */
+
+.markdown-section pre {
+  position: relative;
+}
+
+.boz-copy-code {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--cp-surface0), transparent 20%);
+  background: color-mix(in srgb, var(--cp-mantle), transparent 8%);
+  color: color-mix(in srgb, var(--cp-text), transparent 25%);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease, background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.markdown-section pre:hover .boz-copy-code,
+.boz-copy-code:focus-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.boz-copy-code:hover {
+  background: color-mix(in srgb, var(--cp-mantle), transparent 0%);
+  border-color: color-mix(in srgb, var(--cp-blue), transparent 65%);
+  color: var(--cp-blue);
+}
+
+.boz-copy-code:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--cp-blue), transparent 75%);
+  outline-offset: 2px;
+}
+
+.boz-copy-code svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.boz-copy-code[data-state="copied"] {
+  color: var(--cp-green);
+  border-color: color-mix(in srgb, var(--cp-green), transparent 65%);
+}
+
+.boz-copy-code[data-state="error"] {
+  color: var(--cp-red);
+  border-color: color-mix(in srgb, var(--cp-red), transparent 65%);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Resource blocks (collapsible file previews)
+   ────────────────────────────────────────────────────────────── */
+
+.boz-resource {
+  margin: 1rem 0;
+  border: 1px solid color-mix(in srgb, var(--cp-surface0), transparent 20%);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--cp-mantle), transparent 20%);
+  overflow: hidden;
+}
+
+.boz-resource > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  color: var(--cp-text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.boz-resource > summary::-webkit-details-marker {
+  display: none;
+}
+
+.boz-resource > summary code {
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.boz-resource[open] > summary {
+  border-bottom: 1px solid color-mix(in srgb, var(--cp-surface0), transparent 20%);
+}
+
+.boz-resource > summary::after {
+  content: "▸";
+  color: color-mix(in srgb, var(--cp-text), transparent 35%);
+  transition: transform 120ms ease;
+}
+
+.boz-resource[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.boz-resource .highlight,
+.boz-resource pre {
+  margin: 0;
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
+}
+

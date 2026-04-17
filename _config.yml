@@ -1,0 +1,53 @@
+title: Book of Zero
+description: Practical notes for engineering foundations.
+
+# Project Pages (org: book-of-zero, repo: book-of-zero)
+baseurl: "/book-of-zero"
+
+# GitBook-style Jekyll theme (classic GitBook UI)
+remote_theme: sighingnow/jekyll-gitbook
+
+markdown: kramdown
+kramdown:
+  auto_ids: true
+  input: GFM
+  toc_levels: 1..6
+  syntax_highlighter: rouge
+
+# Syntax highlighting theme (ships with jekyll-gitbook)
+syntax_highlighter_style: github
+
+# Keep pretty URLs for root pages; collections handle their own permalinks below.
+permalink: pretty
+
+# Left sidebar + navigation: driven by collections for this theme
+collections:
+  pages:
+    output: true
+    permalink: /:path/
+    sort_by: nav_order
+
+ordered_collections:
+  - pages
+
+# Optional (GitBook-like): per-page table of contents
+toc:
+  enabled: true
+  h_min: 1
+  h_max: 3
+
+plugins:
+  - jekyll-remote-theme
+  - jekyll-feed
+  - jekyll-readme-index
+  - jemoji
+
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+  - drafts
+  - CLAUDE.md
+  - .claude
