@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "System prompts: write effective LLM instructions"
-nav_order: 4
+nav_order: 6
 ---
 
 A **system prompt** is the model's operating contract: it defines what the assistant does, what it must not do, and what "good output" looks like. It is the single highest-leverage artifact you control — it makes outcomes **repeatable across users and sessions** without rewriting rules into every task prompt. This page covers how to structure system prompts for any LLM, walking through a reference example for a Python coding assistant.

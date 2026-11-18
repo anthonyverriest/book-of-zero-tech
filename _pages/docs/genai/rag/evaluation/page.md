@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "RAG Evaluation: metrics and testing"
-nav_order: 8
+nav_order: 10
 ---
 
 Evaluation measures RAG system quality across retrieval accuracy, answer relevance, and end-to-end performance. This page is intentionally scaffolded so the structure is in place before the detailed guidance is added.

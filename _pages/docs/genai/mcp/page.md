@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "MCP: connect LLMs to tools and data"
-nav_order: 9
+nav_order: 7
 ---
 
 The **Model Context Protocol (MCP)** is an open standard that defines how LLM-powered applications connect to external tools, data sources, and services. It replaces ad-hoc integrations with a single, consistent interface — so adding a new capability to an assistant is as simple as plugging in a server, not rewiring the application.

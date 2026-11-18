@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "RAG Retrieval: vector search and query strategies"
-nav_order: 6
+nav_order: 9
 ---
 
 You indexed a million documents. The user asks a question. You have 100ms to find the 5 most relevant chunks before the LLM generates an answer. Naive search fails — keyword mismatch, semantic drift, or sheer scale. The solution: a multi-stage retrieval pipeline.

@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "RAG Indexing: chunking, embedding, and storage"
-nav_order: 5
+nav_order: 8
 ---
 
 A 50-page PDF goes into your RAG system. The model hallucinates, misses key details, or mixes facts from unrelated sections. The root cause: bad chunking. How you split documents, encode them, and store them determines what the retrieval stage can find — and what the LLM can generate.

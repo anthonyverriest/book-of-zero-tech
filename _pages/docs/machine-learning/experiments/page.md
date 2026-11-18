@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Experiments: run rigorous ML experiments"
-nav_order: 6
+nav_order: 4
 ---
 
 Same model, same data, three runs — 0.89, 0.85, 0.87. Without experiment discipline, none of these are defensible.
