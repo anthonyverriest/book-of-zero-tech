@@ -227,7 +227,7 @@ Stream logs from a single service:
 docker compose logs -f <service-name>
 ```
 
-For single-container log streaming, see the [Docker page: Logs and debugging]({{ site.baseurl }}/docs/containerization/docker/page/#logs-and-debugging).
+For single-container log streaming, see the [Docker page: Logs and debugging]({{ site.baseurl }}/docs/containerization/docker/page/#part-7-logs-and-debugging-happen-from-the-outside).
 
 ### Debug a running service
 
@@ -251,7 +251,7 @@ Which one do you want? `exec` enters a container that is already running. `run` 
 - **Stop a compose stack**: `docker compose down` (add `-v` if you intentionally want to remove named volumes)
 - **Rebuild and restart**: `docker compose up --build --force-recreate`
 
-For standalone Docker commands (`docker ps`, `docker images`, `docker stats`, etc.), see the [Docker page: Logs and debugging]({{ site.baseurl }}/docs/containerization/docker/page/#logs-and-debugging).
+For standalone Docker commands (`docker ps`, `docker images`, `docker stats`, etc.), see the [Docker page: Logs and debugging]({{ site.baseurl }}/docs/containerization/docker/page/#part-7-logs-and-debugging-happen-from-the-outside).
 
 ---
 
