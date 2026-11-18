@@ -4,36 +4,37 @@ title: "Experiments: run rigorous ML experiments"
 nav_order: 4
 ---
 
-Same model, same data, three runs: 0.89, 0.85, 0.87. You have probably seen this happen. The model did not change, but the score did. So which number do you put in the report? Without experiment discipline, none of them are defensible.
+Same model, same data, three runs: 0.89, 0.85, 0.87. You have probably seen this happen. The model did not change, but the score did. So which number do you put in the report? The real question behind it: how do you produce an ML result that you can explain, that others can challenge, and that anyone can reproduce?
 
-This guide covers the practices that make ML experiments reproducible, comparable, and auditable: seed control, data splitting, configuration management, tracking, and ablation. The examples use binary classification with scikit-learn (`roc_auc`, `stratify`, `predict_proba`). The principles apply to regression and multi-class too. Swap in the metric and splitting strategy that fit your task.
+We start with a smaller one: how do you get the same number twice? Once a single run is repeatable, we can ask whether it is honest, then whether it is robust, then whether it beats the alternatives.
+
+Our example runs through the whole guide. A payments team trains an XGBoost classifier to flag fraudulent transactions (`is_fraud`), scored with ROC AUC. In five parts, we make one run reproducible, split the data honestly, move every parameter into a config, track hundreds of runs, and then run the full experiment from baselines to ablation. The examples use binary classification with scikit-learn (`roc_auc`, `stratify`, `predict_proba`). The principles apply to regression and multi-class too. Swap in the metric and splitting strategy that fit your task.
 
 ---
 
 ## On this page
 
-- [Why rigor matters](#why-rigor-matters)
 - [Key concepts](#key-concepts)
 - [Resources](#resources)
-- [Reproducibility contract](#reproducibility-contract)
+- [Part 1: A result you cannot reproduce is a result you cannot defend](#part-1-a-result-you-cannot-reproduce-is-a-result-you-cannot-defend)
   - [Source control](#source-control)
   - [Data immutability](#data-immutability)
   - [Seeds](#seeds)
   - [Environment pinning](#environment-pinning)
   - [Determinism boundaries](#determinism-boundaries)
-- [Data splitting](#data-splitting)
+- [Part 2: The split decides what your score can prove](#part-2-the-split-decides-what-your-score-can-prove)
   - [Three sets, three purposes](#three-sets-three-purposes)
   - [No leakage](#no-leakage)
   - [Group-aware splits](#group-aware-splits)
   - [Early stopping](#early-stopping)
-- [Configuration management](#configuration-management)
+- [Part 3: A config file is the single record of what a run did](#part-3-a-config-file-is-the-single-record-of-what-a-run-did)
   - [Config structure](#config-structure)
   - [Config model](#config-model)
-- [Experiment tracking](#experiment-tracking)
+- [Part 4: Tracking turns two hundred runs into answerable questions](#part-4-tracking-turns-two-hundred-runs-into-answerable-questions)
   - [Autologging](#autologging)
   - [Explicit logging](#explicit-logging)
   - [Organizing runs](#organizing-runs)
-- [Workflow: running an experiment](#workflow-running-an-experiment)
+- [Part 5: An experiment runs in a fixed order](#part-5-an-experiment-runs-in-a-fixed-order)
   - [Single run](#single-run)
   - [Baselines](#baselines)
   - [Error analysis](#error-analysis)
@@ -41,16 +42,7 @@ This guide covers the practices that make ML experiments reproducible, comparabl
   - [Ablation study](#ablation-study)
 - [Common pitfalls](#common-pitfalls)
 - [Recap](#recap)
-
----
-
-## Why rigor matters
-
-Picture a colleague who asks, "Why is your model at 0.89?" A good answer points to a config, a commit, a dataset version, and ten seeds' worth of scores. A bad answer is "that's what the notebook said."
-
-Rigor is what lets you give the good answer. Any result you report should be something you can explain, something others can challenge, and something anyone can reproduce.
-
-The goal is not to track everything. It is to track enough that any result survives those three tests. The rest of this page shows what "enough" means.
+- [Exercise](#exercise)
 
 ---
 
@@ -136,9 +128,13 @@ The goal is not to track everything. It is to track enough that any result survi
 
 ---
 
-## Reproducibility contract
+## Part 1: A result you cannot reproduce is a result you cannot defend
 
-A result that cannot be reproduced cannot be defended. Think of reproducibility as a contract with five clauses: source control, data immutability, seed control, environment pinning, and awareness of determinism boundaries. Break any one and the contract fails.
+Picture a colleague who asks, "Why is the fraud model at 0.89?" A good answer points to a config, a commit, a dataset version, and ten seeds' worth of scores. A bad answer is "that's what the notebook said."
+
+Rigor is what lets you give the good answer. The goal is not to track everything. It is to track enough that any result survives three tests: you can explain it, others can challenge it, and anyone can reproduce it.
+
+Reproducibility comes first, because the other two depend on it. Think of it as a contract with five clauses: source control, data immutability, seed control, environment pinning, and awareness of determinism boundaries. Break any one and the contract fails.
 
 ### Source control
 
@@ -148,15 +144,19 @@ This is the **dirty working tree** vulnerability. The logged hash is a false gua
 
 You have two ways to close the gap. Fail the run if `git status --porcelain` is not empty. Or explicitly log the `git diff` as an MLflow artifact, so the uncommitted changes travel with the run.
 
+**A commit hash identifies your code only if nothing was uncommitted when the run started.**
+
 ### Data immutability
 
 Pinning code and environment is useless if the data underneath changes. Imagine overwriting `features_v1.parquet` with a "fixed" version. Every prior experiment that relied on it is now permanently irreproducible.
 
 So treat training data as immutable. Use append-only storage or a data versioning tool like DVC to enforce it. If a dataset must change, write it as `features_v2.parquet` and update the experiment configuration.
 
+**Never overwrite a dataset; write a new version and point the config at it.**
+
 ### Seeds
 
-Train the same model twice without fixed seeds and you get different scores. Random forests sample features randomly. Data shuffling changes the split order. Stochastic estimators start from different states. Seeds anchor the random number generators to a known starting point.
+Train the fraud model twice without fixed seeds and you get different scores. Random forests sample features randomly. Data shuffling changes the split order. Stochastic estimators start from different states. Seeds anchor the random number generators to a known starting point.
 
 Control randomness by passing `random_state` explicitly to every estimator and splitter. Scikit-learn's randomness flows through numpy, and each `random_state` parameter creates an independent random number generator scoped to that object. There is no shared global state and no accidental coupling between components:
 
@@ -172,11 +172,15 @@ You may have seen `np.random.seed()` at the top of scripts. Avoid it. Global see
 
 `PYTHONHASHSEED` also shows up in reproducibility guides. It controls Python set iteration order, which is irrelevant for scikit-learn, whose randomness flows through numpy.
 
-Now, one seed tells you the pipeline runs end-to-end. It does not tell you whether the result is robust. A different seed might give a substantially different score. To make a defensible claim, you need the distribution.
+Now the problem is solved, right? Same seed, same number, every time. Here is where the expectation fails. A fixed seed makes one run repeatable. It does not tell you whether the result is robust. Seed 42 might give 0.89 and seed 123 give 0.85. You have made one point reproducible, not shown where the score really sits.
+
+So we go from one seed to many. To make a defensible claim, you need the distribution.
 
 **Running multiple seeds is mandatory for publishable results.** Even 3–5 seeds is often insufficient: conclusions can flip with different seeds, and statistical power is too low to detect real differences.
 
-Here is a subtlety that trips people up. For classical ML with cross-validation, each seed × fold combination produces a score, so K-fold CV × S seeds gives K × S paired scores. These scores are **not independent**: training sets overlap across folds, and seeds reuse the same data.
+Here is how the scores add up. With 5-fold cross-validation, one seed gives 5 scores, one per fold. Two seeds give 10. Ten seeds give 10 × 5 = 50. In general, K-fold CV × S seeds gives K × S paired scores.
+
+Fifty scores sounds like plenty of evidence. Here is a subtlety that trips people up: these scores are **not independent**. Training sets overlap across folds, and seeds reuse the same data. Two folds that share 75% of their training rows will tend to agree, so 50 scores carry less information than 50 independent measurements would.
 
 Why does that matter? A plain paired t-test or Wilcoxon test on all 50 scores from 10 seeds × 5 folds understates the variance and produces too many false positives. Use the corrected resampled t-test (Nadeau & Bengio) on those scores, as shown in [Evaluation: statistical significance]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#statistical-significance).
 
@@ -192,7 +196,11 @@ How many seeds do you need? It depends on what is at stake:
 | Publishable comparison | 10 | 50 |
 | High-stakes or noisy | 20+ | 100+ |
 
-If the standard deviation across seeds is large relative to the difference between models, the comparison is inconclusive. Add more seeds or reconsider the experimental design. See [Evaluation: statistical significance]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#statistical-significance) for guidance on minimum sample sizes and statistical tests to determine whether a difference is real.
+A quick check tells you whether you have enough. Say model A scores 0.871 ± 0.012 across seeds and model B scores 0.876 ± 0.011. The difference, 0.005, is smaller than either standard deviation. That comparison is inconclusive, which makes sense, because the seed alone moves each model by more than the gap between them.
+
+If the standard deviation across seeds is large relative to the difference between models, add more seeds or reconsider the experimental design. See [Evaluation: statistical significance]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#statistical-significance) for guidance on minimum sample sizes and statistical tests to determine whether a difference is real.
+
+**One seed makes a run repeatable; many seeds tell you where the score really lives.**
 
 ### Environment pinning
 
@@ -204,6 +212,8 @@ Seeds fix the randomness. They do not fix the software. Pin everything that can 
 
 The Dockerfile from the [Docker guide]({{ site.baseurl }}/docs/containerization/docker/page/) already enforces Python version and dependency pinning via `uv sync --locked`.
 
+**Seeds pin the randomness; the lock file and the Python version pin everything the randomness runs on.**
+
 ### Determinism boundaries
 
 Full determinism is not always achievable, and sometimes not worth the cost. Know where it breaks:
@@ -213,11 +223,13 @@ Full determinism is not always achievable, and sometimes not worth the cost. Kno
 
 **Practical stance**: enforce seeds (per-estimator `random_state` on every estimator and splitter), pin the environment (see [Environment pinning](#environment-pinning)), and accept that bit-exact reproduction across different hardware is sometimes infeasible. Document the platform when it matters.
 
+**Aim for the same distribution of scores everywhere, and bit-exact results only where the hardware allows it.**
+
 ---
 
-## Data splitting
+## Part 2: The split decides what your score can prove
 
-You have probably met a model that scored beautifully in the notebook and collapsed in production. Very often the culprit is the split. The model was learning from information it should never have seen.
+A reproducible run can still be dishonest. You have probably met a model that scored beautifully in the notebook and collapsed in production. Very often the culprit is the split. The model was learning from information it should never have seen.
 
 The split protocol determines what evidence you can claim. Get it right first, and everything downstream inherits that honesty.
 
@@ -231,7 +243,7 @@ ML has the same three roles:
 - **Validation set**: used to select hyperparameters and compare model variants. In cross-validation, each fold's held-out portion serves as the validation set, so no separate validation split is needed.
 - **Test set**: held out from all decisions. Evaluated once, at the end, on the final selected configuration only. If you use the test set to pick between models or tune hyperparameters, it becomes a second validation set and your reported metrics are optimistically biased.
 
-Split before anything else. The test set must be created before any preprocessing, feature engineering, or model training. The snippets below use `cfg`, a Pydantic config object defined in [Configuration management](#configuration-management):
+Split before anything else. The test set must be created before any preprocessing, feature engineering, or model training. The snippets below use `cfg`, a Pydantic config object defined in [Part 3](#part-3-a-config-file-is-the-single-record-of-what-a-run-did):
 
 ```python
 from sklearn.model_selection import train_test_split
@@ -243,13 +255,15 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 `train_test_split` shuffles the data before splitting (`shuffle=True` by default). This is correct for i.i.d. tabular data. Without shuffling, if the dataset is sorted by date, by class, or by source, the split is biased and the test set is not representative.
 
-`stratify=y` goes further. It shuffles while preserving the class distribution in both sets, so neither set ends up with a skewed label ratio. This is critical for imbalanced datasets, where a plain random split could leave one class underrepresented in the test set. When `stratify` is set, shuffle is always on.
+`stratify=y` goes further. It shuffles while preserving the class distribution in both sets, so neither set ends up with a skewed label ratio. Here is why that matters for fraud. Say 2% of 10,000 transactions are fraud, so 200 frauds. A 20% test set should hold about 40 of them. A plain random split could give 30 or 50, which changes what the test score means. Stratifying pins it at 40. When `stratify` is set, shuffle is always on.
 
 `random_state` controls the shuffle order. The test split uses a fixed seed (`cfg.seeds[0]`), so the test set is identical across all seed runs. Comparisons are fair because every model variant is evaluated against the same held-out data.
 
 All cross-validation, hyperparameter search, and model comparison happens on `(X_train, y_train)` only. The test set `(X_test, y_test)` is not touched until final evaluation.
 
 Time-series or sequential data is the exception: shuffling must be disabled. Random splits create future leakage, where the model trains on future data and predicts the past. Use time-based splits instead: train on data before a cutoff date, validate and test on data after. scikit-learn provides `TimeSeriesSplit` for cross-validation on temporal data.
+
+**Create the test set first, stratified and seeded, and do not touch it again until the final evaluation.**
 
 ### No leakage
 
@@ -280,9 +294,11 @@ results = cross_validate(pipe, X_train, y_train, cv=cv, scoring=cfg.scoring)
 
 What if your preprocessing is too complex for a pipeline, for example heavy feature engineering with external data? Use the training indices from each fold explicitly and transform the validation indices separately. The rule is the same: fit on train, transform on validation, never the reverse.
 
+**Anything that learns from data, including a scaler, must learn from the training fold only.**
+
 ### Group-aware splits
 
-Imagine a dataset of medical scans with five scans per patient. A random split puts three of patient A's scans in training and two in test. The model learns patient A's baseline lab values rather than the disease signal, then "recognizes" patient A at test time.
+Fraud data has a trap. Each customer makes many transactions. A random split puts some of customer A's transactions in training and the rest in test. The model learns customer A's habits rather than the fraud signal, then "recognizes" customer A at test time.
 
 The same thing happens whenever a dataset has multiple samples per entity: multiple images per patient, multiple transactions per user, multiple readings per sensor. A random split scatters the entity across train and test, and the model memorizes entity-specific patterns rather than learning generalizable ones. Reported metrics can be inflated by 5–30%.
 
@@ -304,6 +320,8 @@ results = cross_validate(pipe, X_train, y_train, cv=cv, groups=groups.iloc[train
 ```
 
 If your data has no natural grouping (each row is an independent observation), standard `train_test_split` and `StratifiedKFold` are correct. When groups and class imbalance both matter, use `StratifiedGroupKFold`.
+
+**When entities repeat, split by entity, so the test set contains only customers the model has never seen.**
 
 ### Early stopping
 
@@ -347,9 +365,13 @@ The full early stopping CV loop is in `data_splitting.example.py` (see [Resource
 
 Never use the final test set for early stopping. That turns the test set into a validation set and leaks information directly into the model's stopping criteria.
 
+**Early stopping needs its own inner split; any set used to stop training can no longer grade it.**
+
+**So far:** a run is reproducible when code, data, seeds, and environment are pinned, and robust when it holds across many seeds. It is honest when the test set is split first, preprocessing stays inside the folds, entities never straddle the split, and early stopping uses its own inner set.
+
 ---
 
-## Configuration management
+## Part 3: A config file is the single record of what a run did
 
 Picture a training script with `max_depth=6` on line 212 and `learning_rate=0.1` on line 340. Three weeks later, which values produced the result in your slide deck? Hard-coded hyperparameters buried in a script are impossible to track and quick to forget.
 
@@ -383,7 +405,9 @@ scoring: roc_auc
 
 A production-ready version with additional parameters is in `baseline.example.yaml` (see [Resources](#resources)).
 
-For ablation variants, copy the baseline and change one thing. Yes, that duplicates most of the file. That is fine: readability and reproducibility matter more than DRY for experiment configs.
+For ablation variants, copy the baseline and change one thing. Yes, that duplicates most of the file. That is fine: readability and reproducibility matter more than DRY for experiment configs. Two files that differ by one line make the experiment's one variable visible in a single `diff`.
+
+**One complete YAML file per configuration means "what did this run do?" is answered by opening one file.**
 
 ### Config model
 
@@ -444,13 +468,17 @@ python train.py --config configs/baseline.yaml
 python train.py --config configs/ablation_no_text.yaml
 ```
 
+What validation does not tell you: whether the values are sensible. `test_size: 0.99` passes the `gt=0, lt=1` check and still leaves you almost nothing to train on.
+
+**Validate the config on load, so a typo fails in one second instead of one hour into training.**
+
 ---
 
-## Experiment tracking
+## Part 4: Tracking turns two hundred runs into answerable questions
 
-After a week of experiments you might have two hundred runs. Which one used text features? Which seed scored 0.87? A spreadsheet will not keep up.
+After a week of experiments on the fraud model you might have two hundred runs. Which one used text features? Which seed scored 0.87? A spreadsheet will not keep up.
 
-MLflow records parameters, metrics, and artifacts for every run. The tracking server provides a UI for comparing runs and a programmatic API for querying results.
+MLflow records parameters, metrics, and artifacts for every run. The tracking server provides a UI for comparing runs and a programmatic API for querying results. Think of it as a lab notebook that writes itself while you work.
 
 ### Autologging
 
@@ -474,9 +502,11 @@ with mlflow.start_run(run_name=f"{cfg.model.name}_gridsearch"):
     # MLflow logs all param combinations as child runs automatically
 ```
 
-Watch out for `max_tuning_runs`. It controls how many child runs are logged for hyperparameter searches, and it defaults to 5, which is too low for most experiments. Set it to match the number of parameter combinations you want to inspect.
+Watch out for `max_tuning_runs`. It controls how many child runs are logged for hyperparameter searches, and it defaults to 5, which is too low for most experiments. The grid above has 3 × 3 = 9 combinations, so the default would silently drop 4 of them. Set it to match the number of parameter combinations you want to inspect.
 
 Autolog captures estimator parameters (via `get_params(deep=True)`), training metrics, best score, best parameters, and the fitted model artifact. Use autologging with `GridSearchCV` when the search space is small and enumerable. For larger or continuous search spaces, use Optuna (see [Hyperparameter search](#hyperparameter-search)).
+
+**Autolog covers the standard parameters and metrics, as long as `max_tuning_runs` is large enough for your search.**
 
 ### Explicit logging
 
@@ -523,6 +553,8 @@ Here is what goes where:
 | Artifacts | Model, config file, OOF predictions | `mlflow.log_artifact(...)` or autolog |
 | Tags | Data version, custom metadata | `mlflow.set_tag(...)` (git hash is auto-logged) |
 
+**Log everything you will want to filter or compare later: the seed, the mean and spread, the per-fold scores, and the predictions.**
+
 ### Organizing runs
 
 Structure runs so that comparison is natural:
@@ -530,16 +562,22 @@ Structure runs so that comparison is natural:
 - **Experiment** = comparable runs on the same data. One MLflow experiment per task where runs share the same input dataset and evaluation protocol (e.g., `feature_selection_ablation`, `model_comparison_v2`). The organizing principle is input data consistency: if runs use different datasets, they belong in different experiments.
 - **Run** = one execution. For seed sweeps, each run corresponds to one seed × one configuration. For hyperparameter searches, use a parent run with nested child runs (one per trial). The MLflow UI renders the hierarchy, so you can compare trials within a search and compare searches within an experiment.
 - **Params** = inputs that affect model behavior. Log seed, model hyperparameters, and scoring metric with `log_param()`. These are immutable per run and define what the run did.
-- **Tags** = metadata for filtering. Use tags for data version and any cross-cutting attribute you want to filter or group by later. Git hash is auto-logged by MLflow as `mlflow.source.git.commit`, so there is no need to set it manually. Note that `mlflow.set_tag("data_version", "v1")` is a label, not a guarantee: it does not track what the data actually contained. For true data reproducibility, use a data versioning tool like DVC alongside your experiment tracker so that any result can be traced back to the exact dataset that produced it.
+- **Tags** = metadata for filtering. Use tags for data version and any cross-cutting attribute you want to filter or group by later. Git hash is auto-logged by MLflow as `mlflow.source.git.commit`, so there is no need to set it manually.
 - **Run name** = human-readable label. Use a descriptive pattern like `xgboost_seed42` so the MLflow UI is scannable without clicking into each run.
+
+What a tag does not tell you: what the data contained. `mlflow.set_tag("data_version", "v1")` is a label, not a guarantee. For true data reproducibility, use a data versioning tool like DVC alongside your experiment tracker so that any result can be traced back to the exact dataset that produced it.
 
 Avoid dumping unrelated runs into the same MLflow experiment. It makes the UI unusable and comparisons meaningless. When in doubt, create a new experiment. They are cheap.
 
+**One MLflow experiment per dataset and protocol keeps every comparison inside it meaningful.**
+
+**So far:** every parameter lives in a validated YAML file, and every run logs its config, seed, scores, and predictions to MLflow, grouped by dataset. We have all the ingredients. Next, we put them in order.
+
 ---
 
-## Workflow: running an experiment
+## Part 5: An experiment runs in a fixed order
 
-You now have every ingredient. This section puts them in order, from the first run to the ablation table a reviewer will read.
+This part follows the fraud model from its first run to the ablation table a reviewer will read. Each step answers a question the previous one leaves open.
 
 ### Single run
 
@@ -551,12 +589,16 @@ python train.py --config configs/baseline.yaml
 
 A single run validates that the pipeline works end-to-end. It is not evidence of anything: one seed, one configuration, one data split.
 
+**A single run proves the pipeline works, nothing more.**
+
 ### Baselines
 
-Is 0.85 AUC good? You cannot answer that until you know what a dumb model scores. Before comparing complex models, establish what "good" means. Two baselines set the floor and the bar:
+The fraud model scores 0.85 AUC. Is that good? You cannot answer until you know what a dumb model scores. Before comparing complex models, establish what "good" means. Two baselines set the floor and the bar:
 
 - **Trivial baseline**: `DummyClassifier(strategy="most_frequent")` predicts the majority class. Any model must beat this. If it does not, the features carry no signal or there is a data problem.
 - **Simple baseline**: `LogisticRegression` (or `Ridge` for regression). A tuned linear model is often competitive. If a complex model beats logistic regression by less than the standard deviation across seeds, the added complexity is not justified.
+
+The trivial baseline holds a surprise for fraud data. With 2% fraud, predicting "not fraud" for everything is 98% accurate. That is why we score with AUC: a model that ranks every transaction the same gets 0.5, no matter how imbalanced the data is.
 
 ```python
 from sklearn.dummy import DummyClassifier
@@ -584,9 +626,11 @@ The full baseline script with MLflow logging and multi-seed evaluation is in `ba
 
 Run baselines first. If a complex model cannot beat a tuned logistic regression by a meaningful margin, the complexity is not worth the cost.
 
+**A score means something only next to what a trivial model and a simple model achieve on the same split.**
+
 ### Error analysis
 
-Your model is stuck at 0.85 AUC. The tempting move is to launch a bigger hyperparameter search. Resist it for an hour.
+The fraud model is stuck at 0.85 AUC. The tempting move is to launch a bigger hyperparameter search. Resist it for an hour.
 
 The model might be failing on a single error category that no amount of tuning will fix, but that a new feature or data cleaning step would resolve in minutes. Before tuning hyperparameters or adding features, understand what the model gets wrong. Error analysis tells you where the ceiling is and what to try next.
 
@@ -600,7 +644,7 @@ The method: take your baseline model's predictions on the validation set and sam
 | Ambiguous cases | 15 | 15% | — |
 | Other | 11 | 11% | — |
 
-The "ceiling if fixed" column is the key insight. If 34% of errors come from missing address data, fixing that category (imputation, new feature, data collection) can improve performance by roughly that proportion of the current error.
+The "ceiling if fixed" column is the key insight. If 34% of errors come from missing address data, fixing that category (imputation, new feature, data collection) can improve performance by roughly that proportion of the current error. It is a ceiling, not a promise: fixing a category perfectly is the best case.
 
 Hyperparameter tuning, by contrast, optimizes within the current representation. It cannot fix a missing feature or a labeling problem.
 
@@ -612,6 +656,8 @@ The table tells you what to try next:
 - **Systematic failure on a subgroup** → stratified evaluation, targeted features, or more training data for that subgroup.
 
 Use `sklearn.metrics.confusion_matrix` for a quick overview, then inspect actual examples for the error categories that matter most. Log the error analysis table as an MLflow artifact. It documents the reasoning behind your next experiment, not only its result.
+
+**Count what the model gets wrong before you tune, because the biggest error category often needs data, not hyperparameters.**
 
 ### Hyperparameter search
 
@@ -726,16 +772,20 @@ A few more things to know about search:
 
 **Reproducibility**: `TPESampler(seed=...)` makes the search deterministic, but only with sequential execution. Parallel optimization (`n_jobs > 1`) reseeds internally to avoid duplicate suggestions across workers, breaking reproducibility. The search also evaluates each trial on a single seed's CV folds, which adds variance to the selection. The multi-seed evaluation in step 3 guards against lucky picks: if the frozen config degrades across 10 seeds, the search result was not robust.
 
-**Budget**: start with 100 trials and check the optimization history. If the best score plateaus after 30 trials, more trials will not help. If it is still improving at 100 trials, the search space may be too large or the problem too noisy. Be aware of the total cost: 100 Optuna trials × 5-fold CV = 500 model fits for the search alone, plus 10 seeds × 5-fold CV = 50 fits for the final evaluation. Start with fewer seeds or trials during exploration and scale up for the final run.
+**Budget**: start with 100 trials and check the optimization history. If the best score plateaus after 30 trials, more trials will not help. If it is still improving at 100 trials, the search space may be too large or the problem too noisy. Count the cost before you start: 100 Optuna trials × 5-fold CV = 500 model fits for the search alone, plus 10 seeds × 5-fold CV = 50 fits for the final evaluation. Start with fewer seeds or trials during exploration and scale up for the final run.
+
+**Search on one seed, freeze the winner in a config, then confirm it across all seeds before the single test-set evaluation.**
 
 ### Ablation study
 
-Your full system has text features, interaction terms, and a feature selection step. It scores 0.891. Which of those three parts earn their keep? Ablation answers exactly that question: "does this component actually help?"
+The full fraud system has text features, interaction terms, and a feature selection step. It scores 0.891. Which of those three parts earn their keep? Ablation answers exactly that question: "does this component actually help?"
 
 1. **Start from the full system**: the configuration with all components enabled. This is your control.
-2. **Remove one component at a time** and re-run. Each ablation variant changes exactly one thing, so the effect is attributable. This is **leave-one-component-out (LOCO)** ablation, the standard approach. Its limitation: it cannot detect interaction effects. If two components are individually weak but jointly critical (synergy), or if one component compensates when another is removed (masquerade), LOCO will miss it. Use a factorial design when you suspect interactions.
+2. **Remove one component at a time** and re-run. Each ablation variant changes exactly one thing, so the effect is attributable. This is **leave-one-component-out (LOCO)** ablation, the standard approach.
 3. **Run each variant across multiple seeds** (same seeds for all variants).
 4. **Compare to the control** using the same metric and statistical test (see [Evaluation: comparing results]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#comparing-results)).
+
+What LOCO does not tell you: interaction effects. If two components are individually weak but jointly critical (synergy), or if one component compensates when another is removed (masquerade), LOCO will miss it. Use a factorial design when you suspect interactions.
 
 Run all variants with a simple loop:
 
@@ -756,13 +806,27 @@ Report ablation results as a table. Each row is a variant, and the columns show 
 | − interaction terms | 0.887 ± 0.013 | −0.004 | 0.42 | 0.42 |
 | − feature selection | 0.879 ± 0.014 | −0.012 | 0.04 | 0.08 |
 
-With three comparisons against the control, apply the Holm correction before you call a result significant. Here only removing text features is significant. Removing feature selection (p = 0.04 raw, 0.08 corrected) is suggestive, but not yet conclusive.
+Why the last column? Each test has a 5% chance of a false alarm at p < 0.05. Run three tests, and the chance that at least one fires by luck grows to roughly 1 − 0.95³ ≈ 14%. The **Holm correction** pulls that back to 5%.
+
+It looks technical, but it is three multiplications. Sort the raw p-values from smallest to largest: 0.003, 0.04, 0.42. Multiply the smallest by the number of tests (3), the next by 2, the last by 1:
+
+- 0.003 × 3 = 0.009
+- 0.04 × 2 = 0.08
+- 0.42 × 1 = 0.42
+
+Those are the values in the table. In general, with m tests, the k-th smallest p-value is multiplied by (m − k + 1), and each adjusted value is kept at least as large as the one before it. The smallest p-value gets the strictest treatment, which makes sense, because it is the one most likely to be the lucky winner among several tries.
+
+Now read the table. Only removing text features is significant (0.009 < 0.05). Removing feature selection (p = 0.04 raw, 0.08 corrected) is suggestive, but not yet conclusive.
 
 <p align="center">
   <img src="{{ "/assets/images/plots/ablation.svg" | relative_url }}" alt="Ablation study bar chart showing AUC delta vs control with significance markers">
 </p>
 
 For statistical tests and how to read comparison tables, see [Evaluation: comparing results]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#comparing-results).
+
+**Remove one component at a time across the same seeds, and correct for the number of comparisons before you call anything significant.**
+
+**So far:** an experiment starts with one run to prove the pipeline, adds baselines to give scores meaning, uses error analysis to choose what to try, searches and freezes hyperparameters, confirms them across seeds, and ends with an ablation table that says which components matter.
 
 ---
 
@@ -792,3 +856,9 @@ For statistical tests and how to read comparison tables, see [Evaluation: compar
 - Organize MLflow experiments by dataset, and name runs so the UI is scannable.
 - Run baselines, then error analysis, then search. In that order.
 - Ablate one component at a time, across the same seeds, and correct for multiple comparisons.
+
+---
+
+## Exercise
+
+Take any binary classification dataset you have, or `sklearn.datasets.load_breast_cancer`. Run 5-fold `StratifiedKFold` cross-validation of a `LogisticRegression` pipeline with 10 different seeds, and record the mean AUC for each seed. How far apart are the lowest and highest seed means? Now compare it with a `DummyClassifier(strategy="most_frequent")` on the same folds. Finally, take three made-up p-values, 0.01, 0.03, and 0.20, and apply the Holm correction by hand. Which ones stay below 0.05?
