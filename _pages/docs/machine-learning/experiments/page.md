@@ -42,7 +42,6 @@ Our example runs through the whole guide. A payments team trains an XGBoost clas
   - [Ablation study](#ablation-study)
 - [Common pitfalls](#common-pitfalls)
 - [Recap](#recap)
-- [Exercise](#exercise)
 
 ---
 
@@ -856,9 +855,3 @@ For statistical tests and how to read comparison tables, see [Evaluation: compar
 - Organize MLflow experiments by dataset, and name runs so the UI is scannable.
 - Run baselines, then error analysis, then search. In that order.
 - Ablate one component at a time, across the same seeds, and correct for multiple comparisons.
-
----
-
-## Exercise
-
-Take any binary classification dataset you have, or `sklearn.datasets.load_breast_cancer`. Run 5-fold `StratifiedKFold` cross-validation of a `LogisticRegression` pipeline with 10 different seeds, and record the mean AUC for each seed. How far apart are the lowest and highest seed means? Now compare it with a `DummyClassifier(strategy="most_frequent")` on the same folds. Finally, take three made-up p-values, 0.01, 0.03, and 0.20, and apply the Holm correction by hand. Which ones stay below 0.05?

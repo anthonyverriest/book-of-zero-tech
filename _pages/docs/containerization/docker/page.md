@@ -43,7 +43,6 @@ Our example is `churn-api`, a small Python service that serves churn predictions
   - [Logging conventions](#logging-conventions)
 - [Common pitfalls](#common-pitfalls)
 - [Recap](#recap)
-- [Exercise](#exercise)
 
 ---
 
@@ -644,9 +643,3 @@ Anything you change inside a running container disappears when it is replaced. U
 - **Tag for traceability**: an immutable SHA tag plus moving environment pointers.
 - **Log to stdout/stderr**: let the platform collect logs.
 - **Make ports configurable**: use `PORT` and map with `-p host:container`.
-
----
-
-## Exercise
-
-Build an image for a small project with the reference Dockerfile, and time it with `time docker build ...`. Change one line in your package and rebuild: the dependency layer should come from the cache, and the build should take a few seconds. Now add a new dependency to `pyproject.toml`, update the lock file, and rebuild once more. Which layers rebuilt this time, and why? Finally, run the image with `--read-only` but without the `HOME` and `XDG_*` variables, and see whether anything in your app tries to write outside `/tmp`.

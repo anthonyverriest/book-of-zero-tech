@@ -53,7 +53,6 @@ Our example runs through the whole guide. A fraud model scores 1,000 transaction
   - [Custom metrics](#custom-metrics)
 - [Common pitfalls](#common-pitfalls)
 - [Recap](#recap)
-- [Exercise](#exercise)
 
 ---
 
@@ -943,9 +942,3 @@ A missed fraud case costs a chargeback. A false alert costs a few minutes of an 
 - Compare models with paired tests, correct for multiple comparisons, and report effect size.
 - Judge the deployed model by expected value, complexity, interpretability, and live A/B results.
 - When errors have different costs, write down the cost matrix and build a custom metric, but keep the standard metrics beside it.
-
----
-
-## Exercise
-
-A second fraud model, on the same 1,000 transactions, catches 70 of the 90 frauds and raises 130 false alarms. Compute its accuracy, precision, recall, F1, and MCC by hand, then check them with `sklearn.metrics`. Using the prices from [Expected value](#expected-value-ev) (&#36;10 per review, &#36;200 per missed fraud), how much does it save per 1,000 transactions compared with no model? Is it better or worse than our model, which saves &#36;10,000, and does its F1 agree with that verdict?

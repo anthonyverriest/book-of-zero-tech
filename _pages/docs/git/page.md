@@ -36,7 +36,6 @@ We will follow one small team through the whole guide. Ana and Ben maintain `chu
   - [Reproducibility](#reproducibility)
 - [Common pitfalls](#common-pitfalls)
 - [Recap](#recap)
-- [Exercise](#exercise)
 
 ---
 
@@ -482,9 +481,3 @@ Everything here appears earlier in the guide. These are the mistakes people make
 - Sync every hotfix back to `staging` and `dev`.
 - Apply state changes only after they land in `dev`, then once per environment.
 - Commit what defines reproducibility, and keep large artifacts in Git LFS or DVC.
-
----
-
-## Exercise
-
-In a scratch directory, create a repository with `git init -b main`, add one file, and commit it. Create `dev` from `main`, then a `feat/greeting` branch from `dev`. Make three small commits on `feat/greeting`, then squash-merge it into `dev` with `git merge --squash feat/greeting` followed by `git commit`. Run `git log --oneline --graph --all` and count the commits on `dev`. You should see one new commit, not three. Then ask yourself: what would happen to the next `dev` → `main` merge if you squashed that one too?

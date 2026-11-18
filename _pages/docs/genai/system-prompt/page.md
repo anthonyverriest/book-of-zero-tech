@@ -36,7 +36,6 @@ Our example runs through the whole guide: the reference system prompt for a **Py
   - [Security governance](#security-governance)
 - [Common pitfalls](#common-pitfalls)
 - [Recap](#recap)
-- [Exercise](#exercise)
 
 ---
 
@@ -494,9 +493,3 @@ The system prompt is not a security boundary. It is one layer in a defense-in-de
 - Use two or three contrasting examples that follow every rule.
 - End with an output checklist that maps one-to-one to the priorities.
 - Version prompts in the repository, split them into base and overlays, and enforce security in the application.
-
----
-
-## Exercise
-
-Take an assistant prompt you use today, or write a five-line one for a task you know well. Find two instructions in it that could conflict on some request, and write that request down. Then add a `<priorities>` list that settles the conflict, and an `<output>` checklist with one line per priority. Run the conflicting request before and after the change, three times each. Did the answers become more consistent, and does each answer's checklist match what it actually did?

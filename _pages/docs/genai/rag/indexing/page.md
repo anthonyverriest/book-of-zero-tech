@@ -61,7 +61,6 @@ Our example runs through the whole guide. Acme builds an internal policy assista
 - [Common pitfalls](#common-pitfalls)
 - [Best practices](#best-practices)
 - [Recap](#recap)
-- [Exercise](#exercise)
 
 ---
 
@@ -1314,9 +1313,3 @@ Query costs have three components, ranked by typical magnitude:
 - Pick chunking configurations with Hit Rate@5 on labeled queries.
 - Make indexing idempotent with document hashes, and rebuild only when parameters change.
 - Estimate costs from tokens, bytes, and people before you choose a vendor.
-
----
-
-## Exercise
-
-Take one long document you know well, such as a handbook or a long README. Split it with `RecursiveCharacterTextSplitter.from_tiktoken_encoder` at 256, 500, and 800 tokens, each with 10% overlap. For each setting, count the chunks and compute the coefficient of variation of chunk sizes. Then write five questions whose answers you know are in the document, embed the chunks and the questions with one model, and check in which position the right chunk comes back for each question. Which chunk size gives the best Hit Rate@3, and how many more chunks did it cost you?

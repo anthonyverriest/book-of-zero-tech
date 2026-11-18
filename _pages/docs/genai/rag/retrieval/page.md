@@ -73,7 +73,6 @@ We keep the example from the indexing page: Acme's internal policy assistant ove
 - [Common pitfalls](#common-pitfalls)
 - [Best practices](#best-practices)
 - [Recap](#recap)
-- [Exercise](#exercise)
 
 ---
 
@@ -2145,9 +2144,3 @@ RTO and RPO answer two different questions. RTO (recovery time objective) is how
 - Check a semantic cache first, with a 0.90-0.95 threshold and sensible TTLs.
 - Build the pipeline step by step, and escalate to an agent only when the pipeline fails.
 - Measure Hit Rate@5, MRR, and latency on every deployment, roll out in phases, and plan for failures.
-
----
-
-## Exercise
-
-Take ten short documents you know well and three questions: one that uses an exact term from a document (an acronym or a product name), one that paraphrases a document without sharing its words, and one that needs two documents. Rank the documents for each question with BM25 alone, with a sentence-transformers model alone, and with RRF over both rankings (k = 60). Write down where the right document lands each time. Which question did each method get wrong, and did RRF fix it? For the two-document question, would decomposition have helped?

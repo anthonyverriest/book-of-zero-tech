@@ -34,7 +34,6 @@ We keep the example from the Docker page: `churn-api`, a Python service on port 
   - [Inspect from outside](#inspect-from-outside)
 - [Common pitfalls](#common-pitfalls)
 - [Recap](#recap)
-- [Exercise](#exercise)
 
 ---
 
@@ -334,9 +333,3 @@ For standalone Docker commands (`docker ps`, `docker images`, `docker stats`, et
 - Pick the restart policy by workload: `"no"` for jobs, `unless-stopped` for local dev services.
 - Avoid `container_name` if you scale or run multiple copies of a stack.
 - Use `docker compose logs -f`, `exec` and `run --rm` to observe and debug.
-
----
-
-## Exercise
-
-Set up the baseline stack with `LOG_LEVEL=DEBUG` and `ENVIRONMENT=prod` in `.env`. Start it, then run `docker compose exec <service-name> env | sort`. Which of the two values reached the container, and which one did the compose file override? Then start the stack again with the hardened override added, and check with `docker compose exec <service-name> id` and a write to `/app` whether the restrictions took effect.
