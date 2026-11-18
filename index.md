@@ -13,24 +13,24 @@ Practical notes for building foundations in AI, Data, and engineering.
 
 ### Versioning
 
-- [Git workflow]({% link _pages/docs/git/page.md %})
+- [Git workflow]({{ '/docs/git/page/' | relative_url }})
 
 ### Containerization
 
-- [Docker]({% link _pages/docs/containerization/docker/page.md %})
-- [Docker Compose]({% link _pages/docs/containerization/docker-compose/page.md %})
+- [Docker]({{ '/docs/containerization/docker/page/' | relative_url }})
+- [Docker Compose]({{ '/docs/containerization/docker-compose/page/' | relative_url }})
 
 ### Machine Learning
 
-- [Experiments]({% link _pages/docs/machine-learning/experiments/page.md %})
-- [Evaluation]({% link _pages/docs/machine-learning/evaluation/page.md %})
+- [Experiments]({{ '/docs/machine-learning/experiments/page/' | relative_url }})
+- [Evaluation]({{ '/docs/machine-learning/evaluation/page/' | relative_url }})
 
 ### Generative AI
 
-- [System prompt]({% link _pages/docs/genai/system-prompt/page.md %})
-- [MCP]({% link _pages/docs/genai/mcp/page.md %})
+- [System prompt]({{ '/docs/genai/system-prompt/page/' | relative_url }})
+- [MCP]({{ '/docs/genai/mcp/page/' | relative_url }})
 
 #### RAG
 
-- [Indexing]({% link _pages/docs/genai/rag/indexing/page.md %})
-- [Retrieval]({% link _pages/docs/genai/rag/retrieval/page.md %})
+- [Indexing]({{ '/docs/genai/rag/indexing/page/' | relative_url }})
+- [Retrieval]({{ '/docs/genai/rag/retrieval/page/' | relative_url }})
