@@ -4,12 +4,15 @@ title: "Evaluation: measure and compare what matters"
 nav_order: 5
 ---
 
-Optimize for the wrong metric and a model that looks great on paper fails in production. The goal is not to know every metric — it is to pick the right few for each phase of the workflow, read the numbers correctly, and compare models with statistical rigor.
+Your fraud model hits 92% accuracy. You are ready to celebrate. Then someone points out that 91% of transactions are legitimate, so a model that says "not fraud" to everything scores 91%. Your model is one point better than doing nothing.
+
+That moment is what this page is about. Optimize for the wrong metric and a model that looks great on paper fails in production. The goal is not to know every metric. It is to pick the right few for each phase of the workflow, read the numbers correctly, and compare models with statistical rigor.
 
 ---
 
 ## On this page
 
+- [Why metrics matter](#why-metrics-matter)
 - [Key concepts](#key-concepts)
 - [The confusion matrix](#the-confusion-matrix)
 - [Workflow: classification](#workflow-classification)
@@ -42,6 +45,23 @@ Optimize for the wrong metric and a model that looks great on paper fails in pro
   - [Offline vs. online performance](#offline-vs-online-performance)
   - [Time-to-value](#time-to-value)
 - [Custom metrics](#custom-metrics)
+- [Common pitfalls](#common-pitfalls)
+- [Recap](#recap)
+
+---
+
+## Why metrics matter
+
+A metric is a question you ask the model. Ask the wrong question and you get a precise answer to something you do not care about. Accuracy asks "how often are you right?" For fraud, the question you care about is "how much fraud do you catch, and how many good customers do you bother?"
+
+Different phases of a project ask different questions, so they need different metrics. Each workflow below follows the same path:
+
+1. **Baseline**: what does a naive predictor score?
+2. **Model selection**: which model ranks or predicts best, independent of any cutoff?
+3. **Threshold tuning and evaluation**: where do you set the cutoff, given what errors cost?
+4. **Production monitoring**: is the model still doing its job?
+
+After the workflows come the tools that apply everywhere: reading the numbers, diagnostic curves, statistical comparison, and the business view.
 
 ---
 
@@ -49,18 +69,18 @@ Optimize for the wrong metric and a model that looks great on paper fails in pro
 
 - **Confusion matrix**: A 2×2 table that counts true positives (TP), true negatives (TN), false positives (FP), and false negatives (FN). Every classification metric is a function of these four numbers.
 - **Threshold**: The probability cutoff that turns a model's continuous output into a binary decision. Moving the threshold trades precision for recall.
-- **Threshold-independent metric**: Evaluates the model across all thresholds (e.g., AUC). Use for model comparison — it separates "is this a good model?" from "where do I set the cutoff?"
-- **Threshold-dependent metric**: Evaluates the model at one specific cutoff (e.g., precision at 0.5). Use for final evaluation — it answers "how will this perform at the operating point I deploy?"
+- **Threshold-independent metric**: Evaluates the model across all thresholds (e.g., AUC). Use for model comparison. It separates "is this a good model?" from "where do I set the cutoff?"
+- **Threshold-dependent metric**: Evaluates the model at one specific cutoff (e.g., precision at 0.5). Use for final evaluation. It answers "how will this perform at the operating point I deploy?"
 - **Precision**: Of everything the model flagged as positive, how many actually were. High precision = few false alarms.
 - **Recall (Sensitivity)**: Of all actual positives, how many the model caught. High recall = few missed cases.
 - **Specificity (True Negative Rate)**: Of all actual negatives, how many the model correctly ignored. Often paired with sensitivity in medical and manufacturing domains. High specificity = few false alarms in the negative class.
-- **Log loss (cross-entropy)**: Measures how well predicted probabilities match actual outcomes. Unlike AUC or MCC, it penalizes poorly calibrated probabilities — a confident wrong prediction is punished heavily. For a direct check of calibration (whether a predicted 70% is actually right 70% of the time), use [calibration curves](#calibration-curves).
+- **Log loss (cross-entropy)**: Measures how well predicted probabilities match actual outcomes. Unlike AUC or MCC, it penalizes poorly calibrated probabilities: a confident wrong prediction is punished heavily. For a direct check of calibration (whether a predicted 70% is actually right 70% of the time), use [calibration curves](#calibration-curves).
 
 ---
 
 ## The confusion matrix
 
-Read every classification metric from this table:
+Start here, because everything else is built from it. Say your fraud model looked at 1,000 transactions. Each one lands in exactly one of four boxes, depending on what the model said and what was true. Read every classification metric from this table:
 
 ```
                   Predicted positive    Predicted negative
@@ -73,11 +93,11 @@ Actual negative        FP                     TN
 </p>
 
 - **TP (true positive)**: correctly caught.
-- **FN (false negative)**: missed — the model said "no" but it was "yes." Cost depends on domain (missed fraud, missed diagnosis).
-- **FP (false positive)**: false alarm — the model said "yes" but it was "no." Cost depends on domain (unnecessary investigation, wasted resources).
+- **FN (false negative)**: missed. The model said "no" but it was "yes." Cost depends on domain (missed fraud, missed diagnosis).
+- **FP (false positive)**: false alarm. The model said "yes" but it was "no." Cost depends on domain (unnecessary investigation, wasted resources).
 - **TN (true negative)**: correctly ignored.
 
-Every metric below is just a different way of combining these four numbers to answer a specific question.
+Every metric below is a different way of combining these four numbers to answer a specific question. When a metric confuses you, come back to this table and ask which boxes it counts.
 
 ---
 
@@ -89,23 +109,29 @@ Before training any model, compute the baseline: what score does a naive predict
 
 - **Trivial baseline**: always predicts the dominant class (e.g., `DummyClassifier(strategy="most_frequent")`). This is your accuracy baseline. If your model barely beats it, the model is not useful.
 - **Random classifier**: AUC-ROC = 0.5, MCC = 0. Any trained model should clear these comfortably.
-- **Simple baseline**: a tuned linear model (e.g., `LogisticRegression` for classification, `Ridge` for regression). Often competitive with complex models — if a complex model barely beats this, the added complexity is not justified.
+- **Simple baseline**: a tuned linear model (e.g., `LogisticRegression` for classification, `Ridge` for regression). Often competitive with complex models. If a complex model barely beats this, the added complexity is not justified.
 
-Establish the baseline first. It prevents you from celebrating a "92% accuracy" on a dataset that is 91% one class — this is the **accuracy paradox.** A model that predicts the majority class for every input achieves high accuracy on imbalanced data while being completely useless. This is why accuracy alone is insufficient for imbalanced problems. Always pair it with metrics that reflect performance on the minority class: recall, precision, F1, MCC, or AUC-PR.
+Establish the baseline first. It prevents you from celebrating a "92% accuracy" on a dataset that is 91% one class. This is the **accuracy paradox.** A model that predicts the majority class for every input achieves high accuracy on imbalanced data while being completely useless.
+
+This is why accuracy alone is insufficient for imbalanced problems. Always pair it with metrics that reflect performance on the minority class: recall, precision, F1, MCC, or AUC-PR.
 
 For a complete baseline workflow including code examples and tracking with MLflow, see [Experiments: baselines]({{ site.baseurl }}/docs/machine-learning/experiments/page/#baselines).
 
 ### Model selection
 
-You are comparing models or hyperparameter sets. Use threshold-independent metrics so the comparison is fair — you are judging the model's ranking ability, not a particular cutoff.
+You are comparing models or hyperparameter sets. Use threshold-independent metrics so the comparison is fair. You are judging the model's ranking ability, not a particular cutoff.
 
-To compare reliably, evaluate with cross-validation — typically 5-fold. Sklearn uses stratified k-fold by default for classifiers, preserving class proportions in each fold. A single train/test split can be noisy; cross-validation gives you a mean and standard deviation for each metric. For robust model comparison, run multiple seeds — a single seed can give misleading results (see [Experiments: seeds and reproducibility]({{ site.baseurl }}/docs/machine-learning/experiments/page/#seeds) for the full protocol).
+To compare reliably, evaluate with cross-validation, typically 5-fold. Sklearn uses stratified k-fold by default for classifiers, preserving class proportions in each fold. A single train/test split can be noisy; cross-validation gives you a mean and standard deviation for each metric. For robust model comparison, run multiple seeds, because a single seed can give misleading results (see [Experiments: seeds and reproducibility]({{ site.baseurl }}/docs/machine-learning/experiments/page/#seeds) for the full protocol).
 
 **Beware of naive splitting.** If multiple rows belong to the same entity (e.g., five scans of the same patient), standard cross-validation will put the patient in both the train and test sets, leaking data. Use `GroupKFold` to ensure all records for an entity stay together. For time-series data, random splitting leaks the future to predict the past; use `TimeSeriesSplit` or an out-of-time test set.
 
+With the protocol settled, which metric? It depends on your data.
+
 **Balanced data → AUC-ROC.**
 
-AUC-ROC measures ranking quality: if you pick a random positive and a random negative, AUC is the probability that the model scores the positive higher. AUC = 1.0 is perfect separation, 0.5 is random — the model cannot tell the two apart. Technically, it plots recall (true positive rate) vs false positive rate across all thresholds. AUC says nothing about whether predicted probabilities are calibrated.
+Pick a random fraudster and a random honest customer. Ask the model to score both. AUC-ROC is the probability that the model scores the fraudster higher. That is all it measures: ranking quality.
+
+AUC = 1.0 is perfect separation, and 0.5 is random: the model cannot tell the two apart. Technically, it plots recall (true positive rate) vs false positive rate across all thresholds. AUC says nothing about whether predicted probabilities are calibrated.
 
 <p align="center">
   <img src="{{ "/assets/images/plots/roc_curve.svg" | relative_url }}" alt="ROC curves for strong, good, and weak classifiers against the random baseline">
@@ -113,59 +139,65 @@ AUC-ROC measures ranking quality: if you pick a random positive and a random neg
 
 How to interpret:
 - 0.9–1.0: outstanding discriminator.
-- 0.8–0.9: strong — usually production-ready.
-- 0.7–0.8: acceptable — may be enough depending on the problem.
-- 0.5–0.7: poor — revisit features or model choice.
+- 0.8–0.9: strong, usually production-ready.
+- 0.7–0.8: acceptable, may be enough depending on the problem.
+- 0.5–0.7: poor. Revisit features or model choice.
 
 **Imbalanced data → AUC-PR.**
 
-AUC-ROC can look misleadingly good on imbalanced data. The reason is FPR dilution: `FPR = FP / (FP + TN)`, and when negatives dominate, TN is huge — so even many false positives barely move the FPR. The ROC curve hugs the upper-left corner and AUC inflates. AUC-PR focuses on the positive (minority) class only, so it gives a more honest picture when positives are rare.
+AUC-ROC can look misleadingly good on imbalanced data. The reason is FPR dilution: `FPR = FP / (FP + TN)`, and when negatives dominate, TN is huge. So even many false positives barely move the FPR. The ROC curve hugs the upper-left corner and AUC inflates.
 
-How to interpret: AUC-PR has no universal "good" threshold — the baseline depends on class prevalence. A random classifier scores AUC-PR ≈ the positive class rate (e.g., 0.01 if 1% positive). Any trained model should far exceed that. Compare AUC-PR between models, not against a fixed number.
+AUC-PR focuses on the positive (minority) class only, so it gives a more honest picture when positives are rare.
 
-Use AUC-PR for fraud detection, disease screening, defect detection — any problem where the positive class is under ~10-20% of the data.
+How to interpret: AUC-PR has no universal "good" threshold, because the baseline depends on class prevalence. A random classifier scores AUC-PR ≈ the positive class rate (e.g., 0.01 if 1% positive). Any trained model should far exceed that. Compare AUC-PR between models, not against a fixed number.
+
+Use AUC-PR for fraud detection, disease screening, defect detection: any problem where the positive class is under ~10-20% of the data.
 
 **When in doubt → MCC.**
 
-MCC (Matthews Correlation Coefficient) uses all four quadrants of the confusion matrix. It ranges from −1 (perfect inversion) through 0 (random) to +1 (perfect). Unlike accuracy and F1, MCC can only score high if the model handles both positives and negatives well — F1 ignores TN entirely, so a model that over-predicts the positive class can still get a decent F1. MCC catches that. It works regardless of class balance.
+Imagine a model that flags nearly everything as positive. It catches every positive, so its F1 can look decent. But it is useless on the negatives, and F1 cannot see that because F1 ignores TN entirely.
+
+MCC (Matthews Correlation Coefficient) catches that. It uses all four quadrants of the confusion matrix. It ranges from −1 (perfect inversion) through 0 (random) to +1 (perfect). Unlike accuracy and F1, MCC can only score high if the model handles both positives and negatives well. It works regardless of class balance.
 
 `MCC = (TP × TN − FP × FN) / √((TP + FP)(TP + FN)(TN + FP)(TN + FN))`
 
 How to interpret:
 - 0.7–1.0: strong.
-- 0.4–0.7: moderate — may be enough depending on the problem.
-- 0.2–0.4: weak — the model has some signal but not much.
-- 0.0–0.2: negligible — effectively noise.
-- Slightly negative (e.g., −0.05): likely sampling noise, not meaningful — treat as random-level performance.
-- Strongly negative (e.g., −0.5): systematic inversion — the model's predictions are anti-correlated with reality. Check for label bugs or data leakage. If deliberate, flip the predictions.
+- 0.4–0.7: moderate, may be enough depending on the problem.
+- 0.2–0.4: weak. The model has some signal but not much.
+- 0.0–0.2: negligible, effectively noise.
+- Slightly negative (e.g., −0.05): likely sampling noise, not meaningful. Treat as random-level performance.
+- Strongly negative (e.g., −0.5): systematic inversion. The model's predictions are anti-correlated with reality. Check for label bugs or data leakage. If deliberate, flip the predictions.
 
 **When probabilities matter → log loss.**
 
-AUC and MCC evaluate whether the model ranks or classifies correctly — neither tells you if the predicted probabilities are well-matched to reality. Log loss (cross-entropy) penalizes confident wrong predictions heavily. Note: log loss is a proper scoring rule that reflects both calibration and discrimination together — it cannot isolate one from the other. For a direct assessment of calibration, use [calibration curves](#calibration-curves) (reliability diagrams).
+Suppose a model says "99% fraud" for a transaction that turns out to be fine. AUC and MCC barely notice, because they evaluate whether the model ranks or classifies correctly. Neither tells you if the predicted probabilities are well-matched to reality.
+
+Log loss (cross-entropy) does. It penalizes confident wrong predictions heavily. Note: log loss is a proper scoring rule that reflects both calibration and discrimination together, and it cannot isolate one from the other. For a direct assessment of calibration, use [calibration curves](#calibration-curves) (reliability diagrams).
 
 `Log loss = −mean(y × log(p) + (1 − y) × log(1 − p))`
 
-How to interpret: log loss = 0 is perfect. The baseline is the log loss of always predicting the class prevalence (e.g., always predicting 0.01 for a 1% positive rate). Lower is better. There are no universal "good" bands — compare against the baseline and between models. A sudden rise in log loss often means the model is becoming overconfident on wrong predictions.
+How to interpret: log loss = 0 is perfect. The baseline is the log loss of always predicting the class prevalence (e.g., always predicting 0.01 for a 1% positive rate). Lower is better. There are no universal "good" bands, so compare against the baseline and between models. A sudden rise in log loss often means the model is becoming overconfident on wrong predictions.
 
-Use log loss when downstream decisions depend on the probability itself, not just the class label — risk scoring, bid optimization, or any system that uses predicted probabilities as inputs. A model can have a high AUC but poorly calibrated probabilities; log loss catches this.
+Use log loss when downstream decisions depend on the probability itself, not only the class label: risk scoring, bid optimization, or any system that uses predicted probabilities as inputs. A model can have a high AUC but poorly calibrated probabilities; log loss catches this.
 
 **Multiclass.**
 
-All metrics above extend to multiclass problems. The key decision is how to average across classes — and it changes the story. Imagine three classes with 1000, 100, and 10 samples:
+All metrics above extend to multiclass problems. The key decision is how to average across classes, and it changes the story. Imagine three classes with 1000, 100, and 10 samples:
 
-- **`macro`**: compute the metric per class, then take the unweighted mean. The 10-sample class counts as much as the 1000-sample class. Use this when rare classes are important — it surfaces poor performance on them.
+- **`macro`**: compute the metric per class, then take the unweighted mean. The 10-sample class counts as much as the 1000-sample class. Use this when rare classes are important, because it surfaces poor performance on them.
 - **`weighted`**: same as macro, but weighted by the number of true instances per class. The 1000-sample class dominates. Use this when the score should reflect overall performance proportional to class frequency.
 - **`micro`**: pool all TP, FP, FN globally, then compute. For multiclass (not multilabel), micro F1 = micro precision = micro recall = accuracy.
 
-MCC works for multiclass without averaging — pass predictions directly to `sklearn.metrics.matthews_corrcoef`. Note: for multiclass, the minimum MCC is between −1 and 0 (depending on class distribution), not exactly −1.
+MCC works for multiclass without averaging: pass predictions directly to `sklearn.metrics.matthews_corrcoef`. Note: for multiclass, the minimum MCC is between −1 and 0 (depending on class distribution), not exactly −1.
 
-AUC-ROC extends via one-vs-rest (`ovr`) or one-vs-one (`ovo`) and requires probability scores. For imbalanced multiclass, prefer `ovo` with `average='macro'` — it is less sensitive to class imbalance.
+AUC-ROC extends via one-vs-rest (`ovr`) or one-vs-one (`ovo`) and requires probability scores. For imbalanced multiclass, prefer `ovo` with `average='macro'`, which is less sensitive to class imbalance.
 
 ### Threshold tuning and evaluation
 
-You picked a model. Now you choose the operating point — the threshold where the model makes actual decisions.
+You picked a model. Now you choose the operating point: the threshold where the model makes actual decisions.
 
-This is where you align the metric with the **business cost of errors**.
+Here is the intuition. The model outputs 0.37 for a transaction. Do you block it? At a threshold of 0.5, no. At 0.3, yes. Every threshold is a different trade between catching more and bothering fewer. This is where you align the metric with the **business cost of errors**.
 
 **False negatives are expensive → optimize recall.**
 
@@ -181,7 +213,7 @@ Use when: each positive prediction triggers an expensive action (manual review, 
 
 **Both matter roughly equally → use F1.**
 
-`F1 = 2 × (precision × recall) / (precision + recall)`. The harmonic mean penalizes extreme imbalances — a model with 99% precision and 1% recall gets a low F1.
+`F1 = 2 × (precision × recall) / (precision + recall)`. The harmonic mean penalizes extreme imbalances: a model with 99% precision and 1% recall gets a low F1.
 
 F1 assumes false positives and false negatives cost the same. If they do not, use F-beta with a beta > 1 (favor recall) or beta < 1 (favor precision).
 
@@ -194,7 +226,7 @@ F1 assumes false positives and false negatives cost the same. If they do not, us
 1. Plot precision and recall as a function of threshold.
 2. Identify the region where both are acceptable for your use case.
 3. Pick the threshold that matches your cost trade-off.
-4. Report precision, recall, and F1 at that threshold — not just the "best F1."
+4. Report precision, recall, and F1 at that threshold, not only the "best F1."
 
 <p align="center">
   <img src="{{ "/assets/images/plots/precision_recall_threshold.svg" | relative_url }}" alt="Precision and recall as a function of decision threshold, with F1 curve and best-F1 point marked">
@@ -202,9 +234,9 @@ F1 assumes false positives and false negatives cost the same. If they do not, us
 
 ### Production monitoring
 
-Models degrade. Data distributions shift, upstream features change, and user behavior evolves.
+Models degrade. Data distributions shift, upstream features change, and user behavior evolves. The model you shipped in March is answering a slightly different world by September.
 
-Performance metrics (F1, precision, recall) require ground truth labels. In many production settings, labels are delayed or unavailable — this is one of the hardest problems in production ML. When labels are delayed, rely on feature drift and prediction drift as proxy signals until labels arrive.
+Performance metrics (F1, precision, recall) require ground truth labels. In many production settings, labels are delayed or unavailable. A fraud label might arrive weeks later, when the chargeback comes in. This is one of the hardest problems in production ML. When labels are delayed, rely on feature drift and prediction drift as proxy signals until labels arrive.
 
 - Track the same metric you optimized at threshold tuning, computed on live predictions once labels are available.
 - Set alerts for significant drops. A simple starting point is a fixed threshold (e.g., F1 drops more than 5% from a rolling average). More robust approaches use statistical tests (e.g., PSI, KS test) that account for sample size and natural variance.
@@ -215,6 +247,8 @@ Performance metrics (F1, precision, recall) require ground truth labels. In many
 
 ## Workflow: regression
 
+Regression predicts a number: a price, a demand forecast, a delivery time. The question changes from "right or wrong?" to "how far off?"
+
 ### Baseline
 
 - **Mean predictor**: always predicts the mean of the target. Your model should beat this comfortably.
@@ -222,17 +256,19 @@ Performance metrics (F1, precision, recall) require ground truth labels. In many
 
 ### Model selection and evaluation
 
-Unlike classification, regression does not have a threshold step. The same metrics serve both model selection and evaluation. As with classification, use cross-validation (typically 5-fold) to get reliable estimates — sklearn uses standard k-fold by default for regressors.
+Unlike classification, regression does not have a threshold step. The same metrics serve both model selection and evaluation. As with classification, use cross-validation (typically 5-fold) to get reliable estimates. Sklearn uses standard k-fold by default for regressors.
 
 **Default → MAE.**
 
-The average size of the error, in the same unit as the target. Easy to interpret: "the model is off by 2.3 units on average." MAE treats all errors equally — it is robust to outliers and is the right default unless you have a specific reason to penalize large errors more.
+MAE is the average size of the error, in the same unit as the target. It reads naturally: "the model is off by 2.3 units on average." MAE treats all errors equally. It is robust to outliers and is the right default unless you have a specific reason to penalize large errors more.
 
 `MAE = mean(|y − ŷ|)`
 
 **When big misses are costly → RMSE.**
 
-RMSE punishes large errors disproportionately — the squaring step makes sure a few big misses raise RMSE much more than they raise MAE. Use RMSE when a large error is much worse than a small one: demand forecasting (big underestimate = stockout), energy grid planning, structural engineering.
+Suppose a store forecasts demand for umbrellas. Being off by 2 units every day is a nuisance. Being off by 200 units on one rainy day means empty shelves. RMSE is built for that asymmetry.
+
+RMSE punishes large errors disproportionately: the squaring step makes sure a few big misses raise RMSE much more than they raise MAE. Use RMSE when a large error is much worse than a small one: demand forecasting (big underestimate = stockout), energy grid planning, structural engineering.
 
 `RMSE = √(mean((y − ŷ)²))`
 
@@ -242,7 +278,9 @@ RMSE punishes large errors disproportionately — the squaring step makes sure a
 
 **When business needs a percentage → MAPE.**
 
-Mean Absolute Percentage Error translates errors into percentages, making it much easier to explain to non-technical stakeholders ("the forecast is off by 5% on average"). However, MAPE is fundamentally flawed if the actual values can be zero (where it divides by zero and explodes) or close to zero. It also penalizes overestimates more heavily than underestimates. Use it for reporting, but be cautious about optimizing for it directly.
+Mean Absolute Percentage Error translates errors into percentages, which makes it much clearer for non-technical stakeholders ("the forecast is off by 5% on average").
+
+However, MAPE is fundamentally flawed if the actual values can be zero (where it divides by zero and explodes) or close to zero. It also penalizes overestimates more heavily than underestimates. Use it for reporting, but be cautious about optimizing for it directly.
 
 `MAPE = mean(|(y − ŷ) / y|)`
 
@@ -250,26 +288,30 @@ Mean Absolute Percentage Error translates errors into percentages, making it muc
 
 **For targets with heavy right tails → RMSLE.**
 
-Root Mean Squared Logarithmic Error is used when the target spans several orders of magnitude (prices, income, counts). An error of &#36;100 matters a lot if the true price is &#36;50, but is irrelevant if the true price is &#36;500,000. RMSLE penalizes relative differences rather than absolute ones, and it penalizes underestimates more heavily than overestimates. 
+Root Mean Squared Logarithmic Error is used when the target spans several orders of magnitude (prices, income, counts). An error of &#36;100 matters a lot if the true price is &#36;50, but is irrelevant if the true price is &#36;500,000.
+
+RMSLE penalizes relative differences rather than absolute ones, and it penalizes underestimates more heavily than overestimates.
 
 `RMSLE = √(mean((log(y + 1) − log(ŷ + 1))²))`
 
 **For scale-independent comparison → R².**
 
-R² answers one question: what proportion of the variance in the target does the model explain? R² = 1.0 is perfect, R² = 0 means the model is no better than predicting the mean.
+R² answers one question: what proportion of the variance in the target does the model explain? R² = 1.0 is perfect, and R² = 0 means the model is no better than predicting the mean.
 
 `R² = 1 − (SS_res / SS_tot)`, where `SS_res = Σ(y − ŷ)²` and `SS_tot = Σ(y − ȳ)²`.
 
-Use R² when comparing models across different targets or scales (MAE and RMSE are in the target's units, so they are not directly comparable across different problems). R² is also sklearn's default `.score()` for regressors.
+Use R² when comparing models across different targets or scales. MAE and RMSE are in the target's units, so they are not directly comparable across different problems. R² is also sklearn's default `.score()` for regressors.
 
 How to interpret:
-- R² = 1.0: perfect — the model explains all variance.
-- 0.7–1.0: strong — the model captures most of the signal.
-- 0.4–0.7: moderate — useful but missing substantial variance. Check for missing features or nonlinearity.
-- 0.0–0.4: weak — the model explains little. Consider whether the problem is inherently noisy or the features are insufficient.
+- R² = 1.0: perfect. The model explains all variance.
+- 0.7–1.0: strong. The model captures most of the signal.
+- 0.4–0.7: moderate. Useful but missing substantial variance. Check for missing features or nonlinearity.
+- 0.0–0.4: weak. The model explains little. Consider whether the problem is inherently noisy or the features are insufficient.
 - R² < 0: the model is worse than always predicting the mean. Something is fundamentally wrong.
 
-**Interpreting MAE and RMSE together.** RMSE is always ≥ MAE. The gap between them tells you something: if RMSE ≈ MAE, errors are uniform — the model misses by roughly the same amount everywhere. If RMSE >> MAE, a few large errors are pulling RMSE up — investigate the outliers, as they may reveal a data quality issue, a subpopulation the model cannot handle, or a feature gap. Report both: MAE tells you the typical error, RMSE tells you about the worst-case behavior.
+**Interpreting MAE and RMSE together.** RMSE is always ≥ MAE, and the gap between them tells you something. If RMSE ≈ MAE, errors are uniform: the model misses by roughly the same amount everywhere. If RMSE >> MAE, a few large errors are pulling RMSE up.
+
+Investigate those outliers. They may reveal a data quality issue, a subpopulation the model cannot handle, or a feature gap. Report both: MAE tells you the typical error, RMSE tells you about the worst-case behavior.
 
 <p align="center">
   <img src="{{ "/assets/images/plots/mae_vs_rmse.svg" | relative_url }}" alt="Grouped bar chart comparing MAE and RMSE across three regression models, highlighting outlier-driven RMSE inflation">
@@ -280,8 +322,8 @@ How to interpret:
 As with classification, performance metrics require ground truth labels. When labels are delayed, monitor feature drift and prediction drift as proxy signals.
 
 - Track MAE (or RMSE, depending on what you optimized) on live predictions once labels are available.
-- Watch for **error drift**: if MAE rises steadily, investigate — possible causes include concept drift (the relationship between features and target is shifting), data quality issues, population shift, or upstream pipeline changes.
-- Monitor **error percentiles** (P90, P99) over time. Rising tail percentiles reveal growing outlier errors that MAE alone can mask — a subpopulation may be diverging from training data.
+- Watch for **error drift**: if MAE rises steadily, investigate. Possible causes include concept drift (the relationship between features and target is shifting), data quality issues, population shift, or upstream pipeline changes.
+- Monitor **error percentiles** (P90, P99) over time. Rising tail percentiles reveal growing outlier errors that MAE alone can mask: a subpopulation may be diverging from training data.
 - Compare live R² against the training R². A large drop signals that the model's explanatory power has degraded.
 - Check for **feature drift**: if the distribution of key input features shifts significantly from training, the model's predictions may degrade before the target metric shows it.
 
@@ -289,7 +331,9 @@ As with classification, performance metrics require ground truth labels. When la
 
 ## Workflow: ranking
 
-When you are not just predicting a number, but ordering items (search results, product recommendations, feeds), classification and regression metrics fail. A model might predict scores with high RMSE, but if it still sorts the most relevant items to the top, it is a perfect ranker.
+Think about the last time you searched for something. You looked at the top three results, maybe the top ten. Nobody cares what the model thinks of result number 847.
+
+When you are ordering items rather than predicting a single number (search results, product recommendations, feeds), classification and regression metrics fail. A model might predict scores with high RMSE, but if it still sorts the most relevant items to the top, it is a perfect ranker.
 
 ### Baseline
 
@@ -314,9 +358,9 @@ Mean Average Precision is used when there are multiple relevant items, but relev
 
 **When relevance has degrees (graded relevance) → NDCG.**
 
-Normalized Discounted Cumulative Gain is the gold standard for modern search and recommendation. Unlike MAP, which assumes an item is either relevant or not, NDCG handles graded relevance (e.g., 5-star ratings, "highly relevant" vs "somewhat relevant").
+Some results are better than others. A 5-star match should count more than a 3-star one. Normalized Discounted Cumulative Gain is the gold standard for modern search and recommendation. Unlike MAP, which assumes an item is either relevant or not, NDCG handles graded relevance (e.g., 5-star ratings, "highly relevant" vs "somewhat relevant").
 
-It sums the relevance scores of the ranked items, discounting them logarithmically by their position (`1 / log2(rank + 1)`), and then normalizes against the ideal possible ranking for that query so the score is between 0 and 1.
+It sums the relevance scores of the ranked items, discounting them logarithmically by their position (`1 / log2(rank + 1)`). Then it normalizes against the ideal possible ranking for that query, so the score is between 0 and 1.
 
 How to interpret:
 - Evaluated at a cutoff K (e.g., **NDCG@10**), because users rarely look past the first page of results.
@@ -336,7 +380,7 @@ ndcg_10 = ndcg_score(y_true, y_score, k=10)
 
 **For simpler evaluation and monitoring → Precision@K and Recall@K.**
 
-These are complementary to the ranking-aware metrics above. They are easier to explain to non-technical stakeholders and widely used in production monitoring alongside NDCG.
+These complement the ranking-aware metrics above. They are clearer for non-technical stakeholders and widely used in production monitoring alongside NDCG.
 
 `Precision@K = (# relevant items in top K) / K`
 
@@ -344,21 +388,23 @@ These are complementary to the ranking-aware metrics above. They are easier to e
 
 Precision@K tells you what fraction of your recommendations are good. Recall@K tells you what fraction of all good items you surfaced. If you recommend 10 items and 7 are relevant, Precision@10 = 0.7. If there were 20 total relevant items in the catalog, Recall@10 = 7/20 = 0.35.
 
-Unlike NDCG and MAP, these metrics ignore the order within the top K — they only care whether relevant items made it into the list, not where they appear. Use Precision@K when the user's attention is limited (e.g., showing only 5 products) and you want to ensure the shortlist is high-quality. Use Recall@K when coverage matters — in multi-label classification or when you need to ensure all relevant items get surfaced.
+Unlike NDCG and MAP, these metrics ignore the order within the top K. They only care whether relevant items made it into the list, not where they appear.
+
+Use Precision@K when the user's attention is limited (e.g., showing only 5 products) and you want to ensure the shortlist is high-quality. Use Recall@K when coverage matters: in multi-label classification or when you need to ensure all relevant items get surfaced.
 
 **Hit Rate@K** is the binary version: did at least one relevant item appear in the top K? Useful for "single-intent" queries where the user needs any one correct answer.
 
 ### Beyond accuracy: diversity and coverage
 
-Pure accuracy optimization creates **filter bubbles** — users see only variations of what they already like, the catalog concentrates on a few popular items, and discovery breaks down. Enterprise recommendation systems must balance relevance with diversity and coverage.
+You watch one cooking video, and now your whole feed is cooking videos. That is a **filter bubble**, and pure accuracy optimization creates them. Users see only variations of what they already like, the catalog concentrates on a few popular items, and discovery breaks down. Enterprise recommendation systems must balance relevance with diversity and coverage.
 
 **Coverage**: what proportion of the catalog gets recommended over time.
 
 `Coverage = (# unique items recommended) / (# items in catalog)`
 
-If your catalog has 10,000 products but 90% of recommendations come from the same 100 popular items, coverage = 0.01 — you have a popularity bias problem. High coverage ensures the long tail gets exposure. For marketplaces (Etsy, Airbnb), this is a business requirement — sellers expect visibility.
+If your catalog has 10,000 products but 90% of recommendations come from the same 100 popular items, coverage = 0.01. You have a popularity bias problem. High coverage ensures the long tail gets exposure. For marketplaces (Etsy, Airbnb), this is a business requirement: sellers expect visibility.
 
-Track coverage over rolling windows (e.g., daily, weekly). A coverage drop often signals that the model is converging on a narrow set of items. This is especially common after retraining on click data — clicks reinforce popular items, creating a feedback loop.
+Track coverage over rolling windows (e.g., daily, weekly). A coverage drop often signals that the model is converging on a narrow set of items. This is especially common after retraining on click data: clicks reinforce popular items, creating a feedback loop.
 
 **Diversity**: how different the recommended items are from each other within a single list.
 
@@ -370,9 +416,9 @@ Dissimilarity can be cosine distance between item embeddings, category mismatch,
 
 **Personalization**: how different recommendations are across users.
 
-If every user gets the same top-10 list, personalization is zero — the system is just a popularity ranker. Measure this as the average Jaccard distance between recommendation lists for different users.
+If every user gets the same top-10 list, personalization is zero: the system is a popularity ranker in disguise. Measure this as the average Jaccard distance between recommendation lists for different users.
 
-**Trade-offs.** Optimizing purely for NDCG often reduces diversity — the model learns to recommend safe, popular items. Use a composite objective (e.g., `0.7 × NDCG + 0.3 × diversity`) or apply post-processing re-ranking to boost diversity while maintaining a minimum relevance threshold. Many production systems use a two-stage approach: retrieve candidates for relevance, then re-rank for diversity.
+**Trade-offs.** Optimizing purely for NDCG often reduces diversity, because the model learns to recommend safe, popular items. Use a composite objective (e.g., `0.7 × NDCG + 0.3 × diversity`) or apply post-processing re-ranking to boost diversity while maintaining a minimum relevance threshold. Many production systems use a two-stage approach: retrieve candidates for relevance, then re-rank for diversity.
 
 ### Production monitoring
 
@@ -397,31 +443,31 @@ Ground truth relevance is rarely available immediately, so track user behavior a
 
 Offline metrics (NDCG) do not always correlate with business metrics (revenue). A/B tests are expensive (weeks, large traffic). Use **interleaving** first.
 
-**Interleaving** mixes two models in one session (items 1,3,5 from model A; 2,4,6 from model B) and tracks which gets more clicks. **100× more sensitive than A/B testing** — detect differences with small traffic in hours vs weeks. Used by Airbnb, Google, Bing to identify candidates before full A/B tests.
+**Interleaving** mixes two models in one session (items 1,3,5 from model A; 2,4,6 from model B) and tracks which gets more clicks. It is **100× more sensitive than A/B testing**: you can detect differences with small traffic in hours vs weeks. Airbnb, Google, and Bing use it to identify candidates before full A/B tests.
 
-Once interleaving shows a winner, validate with A/B test for business impact.
+Once interleaving shows a winner, validate with an A/B test for business impact.
 
 **Fairness:**
 
 - Track metrics by user segment (geography, demographic, device). Overall NDCG can hide subgroup failures.
-- Monitor exposure distribution for marketplaces — ensure diverse sellers get visibility.
+- Monitor exposure distribution for marketplaces, to ensure diverse sellers get visibility.
 - Watch for feedback loops: clicks reinforce popularity bias. Inject periodic exploration.
 
 ---
 
 ## Reading the numbers
 
-Metrics are only useful if you interpret them in context.
+A number without context is a rumor. Metrics are only useful if you interpret them in context. Here is how to read them:
 
-- **Compare train and validation metrics.** If the training score is high and the validation score is low, the model is overfitting — add regularization, reduce features, or get more data. If both are low, it is underfitting. A small gap with high scores on both is a good fit.
+- **Compare train and validation metrics.** If the training score is high and the validation score is low, the model is overfitting. Add regularization, reduce features, or get more data. If both are low, it is underfitting. A small gap with high scores on both is a good fit.
 - **Always compare to the baseline.** An F1 of 0.85 means nothing in isolation. If the majority-class baseline gives 0.80, the model adds almost no value.
 - **Check both classes.** A high overall score can hide poor performance on the minority class. Always look at per-class precision and recall.
 - **Check the slices (subgroup analysis).** A model might have a fantastic overall MAE or AUC, but perform terribly for a specific geography, demographic, or customer segment. Global metrics hide local failures. Always evaluate the worst-performing slice before deploying, especially for models that impact humans.
-- **Compare MAE and RMSE.** If RMSE is much larger than MAE, you have an outlier problem — do not average it away.
-- **Negative MCC: check the magnitude.** Slightly negative (near zero) is likely noise. Strongly negative means the model is systematically inverted — check for label errors, data leakage, or a flipped target. If the inversion is confirmed, flip the predictions.
+- **Compare MAE and RMSE.** If RMSE is much larger than MAE, you have an outlier problem. Do not average it away.
+- **Negative MCC: check the magnitude.** Slightly negative (near zero) is likely noise. Strongly negative means the model is systematically inverted: check for label errors, data leakage, or a flipped target. If the inversion is confirmed, flip the predictions.
 - **Context determines "good enough."** An AUC of 0.75 can be strong for a hard medical imaging task and terrible for a spam filter. There is no universal threshold for a "good" score.
-- **Suspiciously perfect scores signal leakage.** If a model achieves an AUC of 0.99 on a non-trivial problem, the most likely explanation is data leakage — not a great model. Check for target information bleeding into features, preprocessing applied before the train/test split, or duplicate records across splits. Similarly, tuning hyperparameters on the test set inflates all metrics — always use a separate validation set or cross-validation.
-- **Read the standard deviation from cross-validation.** A mean AUC of 0.83 ± 0.02 is more trustworthy than 0.85 ± 0.08. High variance across folds means the model's performance depends heavily on which data it sees — the model may be unstable or the dataset too small. If the standard deviation is large relative to the difference between models, you cannot confidently pick a winner.
+- **Suspiciously perfect scores signal leakage.** If a model achieves an AUC of 0.99 on a non-trivial problem, the most likely explanation is data leakage, not a great model. Check for target information bleeding into features, preprocessing applied before the train/test split, or duplicate records across splits. Similarly, tuning hyperparameters on the test set inflates all metrics. Always use a separate validation set or cross-validation.
+- **Read the standard deviation from cross-validation.** A mean AUC of 0.83 ± 0.02 is more trustworthy than 0.85 ± 0.08. High variance across folds means the model's performance depends heavily on which data it sees: the model may be unstable or the dataset too small. If the standard deviation is large relative to the difference between models, you cannot confidently pick a winner.
 - **Test set class balance must match deployment.** Precision, recall, and F1 depend on the ratio of positives to negatives. If your test set has 10% positives but production has 1%, precision will be worse in production than your test results suggest. AUC-ROC is invariant to class balance shifts, but threshold-dependent metrics are not.
 - **Small test sets lie.** A metric computed on 100 samples has wide confidence intervals. If you cannot increase the test set, use bootstrap resampling to quantify uncertainty.
 
@@ -429,7 +475,11 @@ Metrics are only useful if you interpret them in context.
 
 ## Diagnostic curves
 
+A single score tells you how well the model did. A curve tells you why, and what to try next.
+
 ### Learning curves
+
+"Should we label more data?" is an expensive question. A learning curve answers it before you spend the money.
 
 A learning curve plots train and validation scores as the training set grows. It answers two questions: is the model underfitting or overfitting, and would more data help?
 
@@ -454,14 +504,14 @@ val_mean = val_scores.mean(axis=1)
 
 How to read the plot:
 
-- **Both curves converge high, small gap**: good fit. More data is unlikely to help — focus on feature engineering or model complexity.
-- **Both curves converge low**: underfitting. The model cannot capture the signal — try a more expressive model, add features, or reduce regularization.
-- **Large gap (train high, validation low)**: overfitting. The model memorizes training data — add regularization, reduce features, or get more data.
+- **Both curves converge high, small gap**: good fit. More data is unlikely to help. Focus on feature engineering or model complexity.
+- **Both curves converge low**: underfitting. The model cannot capture the signal. Try a more expressive model, add features, or reduce regularization.
+- **Large gap (train high, validation low)**: overfitting. The model memorizes training data. Add regularization, reduce features, or get more data.
 - **Validation curve still rising at the right edge**: more training data would likely improve performance. This is one of the few cases where collecting more data is clearly the right move.
 
 ### Validation curves
 
-While a learning curve shows performance vs. *amount of data*, a validation curve plots train and validation scores against varying values of a single hyperparameter (e.g., tree depth, regularization strength). It is the primary visual tool for diagnosing whether your model's complexity is appropriate for the data.
+A learning curve shows performance vs. *amount of data*. A validation curve plots train and validation scores against varying values of a single hyperparameter (e.g., tree depth, regularization strength). It is the primary visual tool for diagnosing whether your model's complexity is appropriate for the data.
 
 ```python
 from sklearn.model_selection import validation_curve
@@ -485,6 +535,8 @@ How to read the plot:
 
 ### Calibration curves
 
+A weather forecaster says "70% chance of rain" on 100 days. If it rains on about 70 of them, the forecaster is calibrated. Models are no different.
+
 A calibration curve (reliability diagram) checks whether predicted probabilities match observed frequencies. A model that predicts 70% should be correct about 70% of the time.
 
 ```python
@@ -499,13 +551,13 @@ prob_true, prob_pred = calibration_curve(y_test, y_prob, n_bins=10)
 
 How to read the plot:
 
-- **Points on the diagonal**: well-calibrated — predicted probabilities reflect reality.
-- **Points above the diagonal**: the model under-predicts — it says 0.3 but the true rate is higher.
-- **Points below the diagonal**: the model over-predicts — it says 0.8 but the true rate is lower.
-- **S-shaped curve** (below the diagonal on the left, above it on the right): underconfident — predictions are squeezed toward the middle.
-- **Inverse S** (above on the left, below on the right): overconfident — predictions are pushed too far toward 0 and 1.
+- **Points on the diagonal**: well-calibrated. Predicted probabilities reflect reality.
+- **Points above the diagonal**: the model under-predicts. It says 0.3 but the true rate is higher.
+- **Points below the diagonal**: the model over-predicts. It says 0.8 but the true rate is lower.
+- **S-shaped curve** (below the diagonal on the left, above it on the right): underconfident. Predictions are squeezed toward the middle.
+- **Inverse S** (above on the left, below on the right): overconfident. Predictions are pushed too far toward 0 and 1.
 
-Common patterns by model type: logistic regression is usually well-calibrated out of the box. Tree ensembles (random forest, gradient boosting) and SVMs often produce poorly calibrated probabilities — random forests tend toward the center (underconfident at extremes), while gradient boosting can be overconfident.
+Common patterns by model type: logistic regression is usually well-calibrated out of the box. Tree ensembles (random forest, gradient boosting) and SVMs often produce poorly calibrated probabilities. Random forests tend toward the center (underconfident at extremes), while gradient boosting can be overconfident.
 
 If calibration is poor and your use case depends on probability quality (risk scoring, bid optimization), apply post-hoc calibration:
 
@@ -520,7 +572,7 @@ Use `method="sigmoid"` (Platt scaling) when data is limited. Use `method="isoton
 
 ### Cumulative gains and lift curves
 
-When evaluating a classification model for a targeted campaign — e.g., you can only afford to manually review 1,000 transactions for fraud, or call 10% of your sales leads — you need to know how well the model concentrates true positives at the very top of its ranked predictions.
+Your fraud team can manually review 1,000 transactions a day, no more. Or your sales team can call 10% of the leads. In a targeted campaign like that, you need to know how well the model concentrates true positives at the very top of its ranked predictions.
 
 A **Cumulative Gains curve** plots the percentage of the total population targeted (X-axis) against the percentage of all actual positive cases found (Y-axis).
 
@@ -542,16 +594,16 @@ plt.legend()
 plt.show()
 ```
 
-`scikit-plot`, often used for this chart, is unmaintained and fails to import on current SciPy, so compute the curve directly.
+You may find tutorials that use `scikit-plot` for this chart. It is unmaintained and fails to import on current SciPy, so compute the curve directly as above.
 
 How to read a Cumulative Gains plot:
 
 - **The diagonal (random baseline)**: If you target a random 20% of users, you will find 20% of the true positives.
 - **The model curve**: If the curve hits 0.70 at the 0.20 mark on the X-axis, it means targeting the top 20% of users (ranked by model probability) captures 70% of all actual positives.
 
-A **Lift curve** is derived directly from the cumulative gains curve. It shows the multiplier of improvement over random guessing at each decile. If you target the top 10% of users and find 3 times as many positives as a random 10% sample would yield, your lift at the 10th percentile is 3.0. 
+A **Lift curve** is derived directly from the cumulative gains curve. It shows the multiplier of improvement over random guessing at each decile. If you target the top 10% of users and find 3 times as many positives as a random 10% sample would yield, your lift at the 10th percentile is 3.0.
 
-These curves are indispensable for translating model performance into business strategy: they let stakeholders answer questions like "How deep into the list should we go to hit our ROI target?"
+These curves are indispensable for translating model performance into business strategy. They let stakeholders answer questions like "How deep into the list should we go to hit our ROI target?"
 
 ---
 
@@ -559,11 +611,17 @@ These curves are indispensable for translating model performance into business s
 
 ### Statistical significance
 
-A model with a higher mean score is not necessarily better — the difference might be noise. Use statistical tests to quantify confidence.
+Model A scores 0.852. Model B scores 0.847. Is A better? Flip a coin ten times and you might get seven heads; that does not make the coin unfair. A model with a higher mean score is not necessarily better, because the difference might be noise. Use statistical tests to quantify confidence.
 
 **Paired tests compare models on the same data.** Each seed (or fold) produces a paired observation: model A's score and model B's score on the same split. Paired tests are more powerful than unpaired tests because they control for variance across splits.
 
-**How many seeds?** Hypothesis tests need enough paired observations to have statistical power. With fewer than 6 paired observations, the Wilcoxon signed-rank test cannot reach p < 0.05 — and a paired t-test with 4 degrees of freedom is barely better. You need at least 10 paired observations for minimal statistical power — this could come from 10 seeds (single train/test split per seed), 10 CV folds (single seed), or a combination. For robust, publishable comparisons, use 10 seeds × 5-fold CV (see [Experiments: reproducibility and seed protocols]({{ site.baseurl }}/docs/machine-learning/experiments/page/#seeds)), but analyse those 50 scores with the corrected resampled t-test below. CV fold scores share training data, so they are not independent observations. With fewer than 10 paired observations, report a t-based confidence interval on the mean difference and treat the result as weak evidence.
+**How many seeds?** Hypothesis tests need enough paired observations to have statistical power. With fewer than 6 paired observations, the Wilcoxon signed-rank test cannot reach p < 0.05, and a paired t-test with 4 degrees of freedom is barely better.
+
+You need at least 10 paired observations for minimal statistical power. This could come from 10 seeds (single train/test split per seed), 10 CV folds (single seed), or a combination. For robust, publishable comparisons, use 10 seeds × 5-fold CV (see [Experiments: reproducibility and seed protocols]({{ site.baseurl }}/docs/machine-learning/experiments/page/#seeds)), but analyse those 50 scores with the corrected resampled t-test below. CV fold scores share training data, so they are not independent observations.
+
+With fewer than 10 paired observations, report a t-based confidence interval on the mean difference and treat the result as weak evidence.
+
+Now the tests themselves, from the most familiar to the most robust.
 
 **Paired t-test**: assumes the paired differences are approximately normally distributed. Use it only when the paired observations are independent: for example, each seed has its own fresh train/test split, scored once. The differences should also look roughly symmetric.
 
@@ -596,7 +654,7 @@ def corrected_resampled_ttest(scores_a, scores_b, n_folds: int) -> tuple[float, 
 stat, p_value = stats.wilcoxon(scores_a, scores_b)
 ```
 
-**Bootstrap confidence interval**: resample the paired differences with replacement to estimate the distribution of the mean difference. Reports a confidence interval rather than a p-value, which is often more informative. Percentile bootstrap intervals are too narrow with very few observations, so prefer it when you have 20+ independent paired observations.
+**Bootstrap confidence interval**: resample the paired differences with replacement to estimate the distribution of the mean difference. It reports a confidence interval rather than a p-value, which is often more informative. Percentile bootstrap intervals are too narrow with very few observations, so prefer it when you have 20+ independent paired observations.
 
 ```python
 rng = np.random.default_rng(0)
@@ -626,7 +684,7 @@ Interpretation: |d| < 0.2 negligible, 0.2–0.5 small, 0.5–0.8 medium, > 0.8 l
   <img src="{{ "/assets/images/plots/effect_size.svg" | relative_url }}" alt="Cohen's d effect size scale with three model comparisons plotted on it">
 </p>
 
-**Multiple comparisons**: when comparing more than two models, the probability of a false positive increases. If you compare 10 models pairwise, you run 45 tests — at α = 0.05, you expect ~2 false positives by chance. Apply the Holm-Bonferroni correction:
+**Multiple comparisons**: when comparing more than two models, the probability of a false positive increases. If you compare 10 models pairwise, you run 45 tests. At α = 0.05, you expect ~2 false positives by chance. Apply the Holm-Bonferroni correction:
 
 ```python
 from statsmodels.stats.multitest import multipletests
@@ -651,7 +709,7 @@ How to read this table:
 
 - **Mean ± std**: the average metric across seeds. The std tells you how stable the model is. A model with higher mean but much higher std may not be reliably better.
 - **Δ Control**: the difference from the baseline. Positive means better, negative means worse (assuming the metric is higher-is-better).
-- **p-value**: probability of observing this difference (or larger) by chance, assuming no real difference. Below 0.05 is the conventional threshold, but report the actual value — let the reader judge.
+- **p-value**: probability of observing this difference (or larger) by chance, assuming no real difference. Below 0.05 is the conventional threshold, but report the actual value and let the reader judge.
 - **p (Holm)**: the p-value after correcting for the three comparisons against the control. Decide significance on this column.
 - **Cohen's d**: effect size. Even if p < 0.05, a negligible effect size (|d| < 0.2) means the difference is not practically meaningful.
 
@@ -665,9 +723,11 @@ In the example: "No text features" is significantly worse (p = 0.003, large effe
 
 ## The business evaluation
 
-The model with the highest AUC or lowest RMSE on the cross-validation leaderboard is rarely the best model to deploy. In production, predictive accuracy is just one variable in a larger business equation. Before deploying, evaluate the model against these operational constraints.
+The model with the highest AUC or lowest RMSE on the cross-validation leaderboard is rarely the best model to deploy. In production, predictive accuracy is one variable in a larger business equation. Before deploying, evaluate the model against these operational constraints.
 
 ### Expected value (EV)
+
+Every box in the confusion matrix has a price. A caught fraud saves money. A false alarm costs an analyst's hour. A missed fraud costs the chargeback. Add them up, and you know whether the model pays for itself.
 
 A model is only worth deploying if its Return on Investment (ROI) is positive. To calculate this, translate the confusion matrix into dollars using an expected value framework.
 
@@ -675,7 +735,7 @@ A model is only worth deploying if its Return on Investment (ROI) is positive. T
 
 If the expected value of using the model is lower than the expected value of your current baseline (which might be a simple rules engine, or a manual review process), the model is a failure, regardless of its statistical significance.
 
-**Hard vs. Soft ROI.** Distinguish between **hard ROI** (revenue increase, cost reduction, fraud prevented) and **soft ROI** (faster decisions, reduced manual work, better customer experience). Report both: executives care about dollars, teams care about whether the model makes their work easier. Example: a fraud model that saves &#36;50K per year (hard) but also cuts analyst investigation time by 30% (soft) has stronger total value than the &#36;50K alone suggests. 
+**Hard vs. Soft ROI.** Distinguish between **hard ROI** (revenue increase, cost reduction, fraud prevented) and **soft ROI** (faster decisions, reduced manual work, better customer experience). Report both: executives care about dollars, teams care about whether the model lightens their work. Example: a fraud model that saves &#36;50K per year (hard) but also cuts analyst investigation time by 30% (soft) has stronger total value than the &#36;50K alone suggests.
 
 ### The complexity tax
 
@@ -688,13 +748,13 @@ Always establish a simple baseline. If a complex model yields only a marginal im
 
 ### Interpretability constraints
 
-In highly regulated domains (finance, healthcare, insurance), deploying a "black-box" model is often illegal or ethically unacceptable. If a customer is denied a loan or a medical claim, the business must explain exactly why.
+If a customer is denied a loan or a medical claim, the business must explain exactly why. "The neural network said so" is not an explanation. In highly regulated domains (finance, healthcare, insurance), deploying a "black-box" model is often illegal or ethically unacceptable.
 
 In these environments, an interpretable model (like logistic regression, decision trees, or generalized additive models) with an AUC of 0.82 will always win against a deep neural network with an AUC of 0.87. Evaluate whether your use case requires intrinsic explainability before exploring complex architectures.
 
 ### Offline vs. online performance
 
-Good offline metrics (AUC, MAE, NDCG) are just a ticket to run an A/B test. The ultimate evaluation is whether the model actually moves the core business KPIs (revenue, retention, conversion rate) in a live environment.
+Good offline metrics (AUC, MAE, NDCG) are a ticket to run an A/B test, nothing more. The ultimate evaluation is whether the model actually moves the core business KPIs (revenue, retention, conversion rate) in a live environment.
 
 Offline metrics often diverge from online reality due to:
 - **Feedback loops**: The model's predictions change user behavior in ways historical data cannot capture.
@@ -717,9 +777,9 @@ Project ROI over 12-24 months, not launch day. A simpler model with stable perfo
 
 ## Custom metrics
 
-Metrics like accuracy and F1 assume all errors cost the same. In practice they rarely do. When the business cost of a false negative is fundamentally different from a false positive, you need cost-sensitive evaluation.
+A missed fraud case costs a chargeback. A false alert costs a few minutes of an analyst's time. Accuracy and F1 treat those two errors as equal, and in practice they rarely are. When the business cost of a false negative is fundamentally different from a false positive, you need cost-sensitive evaluation.
 
-**Try the simple options first.** Before building a custom metric, check whether sklearn's built-in mechanisms are enough. `class_weight` (available in `LogisticRegression`, `SVC`, `RandomForestClassifier`, etc.) lets you set per-class weights that modify the training loss — e.g., `class_weight={0: 1, 1: 50}` encodes a 50:1 cost ratio directly. `sample_weight` allows per-sample weighting in both training and evaluation. These handle many cost-sensitive scenarios without writing any custom code.
+**Try the simple options first.** Before building a custom metric, check whether sklearn's built-in mechanisms are enough. `class_weight` (available in `LogisticRegression`, `SVC`, `RandomForestClassifier`, etc.) lets you set per-class weights that modify the training loss. For example, `class_weight={0: 1, 1: 50}` encodes a 50:1 cost ratio directly. `sample_weight` allows per-sample weighting in both training and evaluation. These handle many cost-sensitive scenarios without writing any custom code.
 
 **When to build a custom metric:**
 
@@ -729,9 +789,41 @@ Metrics like accuracy and F1 assume all errors cost the same. In practice they r
 
 **How to build one:**
 
-1. **Write down the cost matrix.** Assign a concrete cost (dollars, hours, risk) to each cell of the confusion matrix. If you cannot quantify it, estimate the ratio — "a missed fraud case costs roughly 50× more than a false alert" is enough.
-2. **Define the formula.** `Weighted cost = (FN × cost_fn) + (FP × cost_fp)`. Minimize this. This assumes correct predictions (TP, TN) have zero or equal cost — if a true positive has direct value (e.g., revenue from an approved loan), include those terms too. For regression, replace the uniform loss with a domain-specific penalty (e.g., asymmetric loss that penalizes underestimates more than overestimates).
-3. **Make it a scorer.** Wrap it so your training framework can optimize against it (e.g., `sklearn.metrics.make_scorer`). If the metric is not differentiable, use it for evaluation and cross-validation — optimize a differentiable proxy during training.
-4. **Validate it against intuition.** Compute the custom metric on a few examples where you know the right answer. If the metric disagrees with human judgment, the cost model is wrong — fix the costs, not the judgment.
+1. **Write down the cost matrix.** Assign a concrete cost (dollars, hours, risk) to each cell of the confusion matrix. If you cannot quantify it, estimate the ratio. "A missed fraud case costs roughly 50× more than a false alert" is enough.
+2. **Define the formula.** `Weighted cost = (FN × cost_fn) + (FP × cost_fp)`. Minimize this. This assumes correct predictions (TP, TN) have zero or equal cost. If a true positive has direct value (e.g., revenue from an approved loan), include those terms too. For regression, replace the uniform loss with a domain-specific penalty (e.g., asymmetric loss that penalizes underestimates more than overestimates).
+3. **Make it a scorer.** Wrap it so your training framework can optimize against it (e.g., `sklearn.metrics.make_scorer`). If the metric is not differentiable, use it for evaluation and cross-validation, and optimize a differentiable proxy during training.
+4. **Validate it against intuition.** Compute the custom metric on a few examples where you know the right answer. If the metric disagrees with human judgment, the cost model is wrong. Fix the costs, not the judgment.
 
 **Keep the standard metrics alongside it.** A custom metric optimizes for business value, but standard metrics (precision, recall, MCC) remain your sanity check. If the custom metric improves while MCC drops, something is off.
+
+---
+
+## Common pitfalls
+
+- **Trusting accuracy on imbalanced data.** 92% accuracy on a 91%-majority dataset is the accuracy paradox. Compare to the [baseline](#baseline) and add a minority-class metric.
+- **Using AUC-ROC when positives are rare.** FPR dilution inflates it. Use AUC-PR (see [Model selection](#model-selection)).
+- **Splitting without groups or time.** Repeated entities and time series leak across random splits. Use `GroupKFold` or `TimeSeriesSplit`.
+- **Tuning on the test set.** It inflates every metric. Tune on validation folds and touch the test set once.
+- **Celebrating a 0.99.** On a non-trivial problem, suspect leakage first (see [Reading the numbers](#reading-the-numbers)).
+- **Testing on a different class balance than production.** Precision, recall, and F1 will shift when the ratio changes.
+- **Optimizing MAPE when targets can be zero.** It divides by zero and explodes. Use it for reporting only.
+- **Running a plain t-test on CV fold scores.** The scores are not independent. Use the corrected resampled t-test (see [Statistical significance](#statistical-significance)).
+- **Skipping the multiple-comparison correction.** Ten models means 45 pairwise tests and about two false positives. Apply Holm.
+- **Mistaking significance for importance.** A p-value of 0.01 with a negligible Cohen's d is real but irrelevant.
+- **Calling an evaluation done offline.** Offline metrics earn an A/B test. The live business KPI is the final judge (see [Offline vs. online performance](#offline-vs-online-performance)).
+
+---
+
+## Recap
+
+- Start from the confusion matrix. Every classification metric counts some of its four boxes.
+- Compute a baseline before anything else, so you know what "good" means.
+- Select models with threshold-independent metrics: AUC-ROC for balanced data, AUC-PR for rare positives, MCC when in doubt, and log loss when probabilities matter.
+- Set the threshold from the cost of errors: recall when misses hurt, precision when false alarms hurt, F1 when both matter.
+- For regression, default to MAE, add RMSE when big misses hurt, and compare the two.
+- For ranking, measure position: MRR for one answer, MAP for binary relevance, NDCG for graded relevance. Watch coverage and diversity too.
+- Read every number against the baseline, the slices, and the standard deviation.
+- Use learning, validation, calibration, and gains curves to decide what to try next.
+- Compare models with paired tests, correct for multiple comparisons, and report effect size.
+- Judge the deployed model by expected value, complexity, interpretability, and live A/B results.
+- When errors have different costs, write down the cost matrix and build a custom metric, but keep the standard metrics beside it.
