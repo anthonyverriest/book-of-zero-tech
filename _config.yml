@@ -1,8 +1,8 @@
 title: Book of Zero
 description: Practical notes for engineering foundations.
 
-# Project Pages (org: book-of-zero, repo: book-of-zero)
-baseurl: "/book-of-zero"
+# Project Pages (user: anthonyverriest, repo: book-of-zero-tech)
+baseurl: "/book-of-zero-tech"
 
 # GitBook-style Jekyll theme (classic GitBook UI)
 remote_theme: sighingnow/jekyll-gitbook
