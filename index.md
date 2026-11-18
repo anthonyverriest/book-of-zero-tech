@@ -28,6 +28,7 @@ Practical notes for building foundations in AI, Data, and engineering.
 ### Generative AI
 
 - [System prompt]({% link _pages/docs/genai/system-prompt/page.md %})
+- [MCP]({% link _pages/docs/genai/mcp/page.md %})
 
 #### RAG
 
