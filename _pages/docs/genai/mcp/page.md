@@ -4,7 +4,17 @@ title: "MCP: connect LLMs to tools and data"
 nav_order: 7
 ---
 
-The **Model Context Protocol (MCP)** is an open standard that defines how LLM-powered applications connect to external tools, data sources, and services. It replaces ad-hoc integrations with a single, consistent interface — so adding a new capability to an assistant is as simple as plugging in a server, not rewiring the application.
+Your assistant needs to run SQL queries against your analytics database and open GitHub issues. Next month, it also needs your ticketing system. The real question this page answers: how do you give an LLM application access to many tools and data sources without rewriting the application for each one?
+
+We reduce it to a smaller one first: how do you connect **one** assistant to **one** system? Without a shared standard, you write a custom integration. That works once. Now count. Three assistants (a desktop app, an IDE plugin, an internal agent) and four systems need 3 × 4 = 12 custom integrations, and each new system adds three more.
+
+The **Model Context Protocol (MCP)** fixes that count. It is an open standard that defines how LLM-powered applications connect to external tools, data sources, and services. Each assistant implements the protocol once, and each system is wrapped once in an MCP server. The same three assistants and four systems now need 3 + 4 = 7 pieces, and a new system adds one server that every assistant can use. Think of it as a universal power socket: you build the plug once, and it fits every wall.
+
+What MCP does not decide: which tools a model should use, or whether a call is safe. The host application still owns approval and access control.
+
+This page introduces the vocabulary first. The architecture, server primitives, transports, and best practices sections are still being written.
+
+**MCP turns many-to-many custom integrations into one client per application and one server per system.**
 
 ---
 
@@ -32,10 +42,10 @@ The **Model Context Protocol (MCP)** is an open standard that defines how LLM-po
 - **Model Context Protocol (MCP)**: An open protocol that standardizes how LLM applications communicate with external servers that provide tools, data, and prompts. It decouples the host application from the capabilities it can access.
 - **Host**: The LLM-powered application the user interacts with (for example Claude Desktop, an IDE assistant, or a custom agent). A host creates and manages one or more clients.
 - **Client**: A protocol-level connector inside the host that maintains a 1:1 session with a single MCP server. Handles capability negotiation, message routing, and transport lifecycle.
-- **Server**: A lightweight process that exposes capabilities (tools, resources, prompts) over MCP. Servers are the integration point — each one wraps a specific system or data source.
+- **Server**: A lightweight process that exposes capabilities (tools, resources, prompts) over MCP. Servers are the integration point: each one wraps a specific system or data source.
 - **Tools**: Functions a server exposes for the model to call (for example "run a SQL query," "create a GitHub issue"). The model decides when and how to invoke them, subject to user approval.
 - **Resources**: Structured data a server exposes for the application to read (for example file contents, database schemas, API responses). The application controls access; the model can reference the data but does not invoke resources directly.
-- **Prompts**: Templated message sequences a server provides (for example "summarize this PR," "explain this error"). The user selects and parameterizes them — they are neither model-invoked nor application-invoked.
+- **Prompts**: Templated message sequences a server provides (for example "summarize this PR," "explain this error"). The user selects and parameterizes them; they are neither model-invoked nor application-invoked.
 - **Transports**: The communication channel between client and server. MCP defines two standard transports: **stdio** (local processes communicating over stdin/stdout) and **Streamable HTTP** (remote servers communicating over HTTP with optional SSE streaming).
 - **Sampling** (deprecated): A mechanism that lets servers request LLM completions through the client. The 2026-07-28 specification deprecates it, along with Roots and Logging. New servers should call LLM provider APIs directly; for logging, write to stderr (stdio) or use OpenTelemetry.
 - **Specification version**: This page follows the MCP specification **2026-07-28**. That revision made the protocol stateless: it removed the `initialize` handshake and Streamable HTTP sessions.
