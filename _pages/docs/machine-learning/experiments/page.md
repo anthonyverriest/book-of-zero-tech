@@ -175,7 +175,7 @@ If the standard deviation across seeds is large relative to the difference betwe
 
 Pin everything that can change between machines or over time:
 
-- **Python version**: specify in `pyproject.toml` and the Dockerfile (`ARG PYTHON_VERSION=3.13`).
+- **Python version**: specify in `pyproject.toml` and the Dockerfile (`ARG PYTHON_VERSION=3.14`).
 - **Dependencies**: use `uv.lock`. The Dockerfile enforces this with `uv sync --locked` — if the lockfile is missing or stale, the build fails.
 - **scikit-learn version**: a minor version upgrade can change default hyperparameters, convergence criteria, or internal random number consumption. A model trained on 1.4 may not reproduce identically on 1.5 even with the same seed. The lockfile handles this, but document the version in your experiment logs.
 
