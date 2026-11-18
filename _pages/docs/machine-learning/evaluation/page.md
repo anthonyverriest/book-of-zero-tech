@@ -500,8 +500,10 @@ prob_true, prob_pred = calibration_curve(y_test, y_prob, n_bins=10)
 How to read the plot:
 
 - **Points on the diagonal**: well-calibrated — predicted probabilities reflect reality.
-- **Points above the diagonal**: the model is underconfident — it predicts 0.3 but the true rate is higher.
-- **Points below the diagonal**: the model is overconfident — it predicts 0.8 but the true rate is lower.
+- **Points above the diagonal**: the model under-predicts — it says 0.3 but the true rate is higher.
+- **Points below the diagonal**: the model over-predicts — it says 0.8 but the true rate is lower.
+- **S-shaped curve** (below the diagonal on the left, above it on the right): underconfident — predictions are squeezed toward the middle.
+- **Inverse S** (above on the left, below on the right): overconfident — predictions are pushed too far toward 0 and 1.
 
 Common patterns by model type: logistic regression is usually well-calibrated out of the box. Tree ensembles (random forest, gradient boosting) and SVMs often produce poorly calibrated probabilities — random forests tend toward the center (underconfident at extremes), while gradient boosting can be overconfident.
 
@@ -523,14 +525,24 @@ When evaluating a classification model for a targeted campaign — e.g., you can
 A **Cumulative Gains curve** plots the percentage of the total population targeted (X-axis) against the percentage of all actual positive cases found (Y-axis).
 
 ```python
-import scikitplot as skplt
 import matplotlib.pyplot as plt
+import numpy as np
 
-# y_prob should contain probabilities for both classes
-# e.g., y_prob = model.predict_proba(X_test)
-skplt.metrics.plot_cumulative_gain(y_test, y_prob)
+# y_score: positive-class probability, e.g. model.predict_proba(X_test)[:, 1]
+order = np.argsort(y_score)[::-1]
+y_sorted = np.asarray(y_test)[order]
+pct_targeted = np.arange(1, len(y_sorted) + 1) / len(y_sorted)
+pct_positives_found = np.cumsum(y_sorted) / y_sorted.sum()
+
+plt.plot(np.r_[0, pct_targeted], np.r_[0, pct_positives_found], label="Model")
+plt.plot([0, 1], [0, 1], "--", label="Random")
+plt.xlabel("Share of population targeted")
+plt.ylabel("Share of positives found")
+plt.legend()
 plt.show()
 ```
+
+`scikit-plot`, often used for this chart, is unmaintained and fails to import on current SciPy, so compute the curve directly.
 
 How to read a Cumulative Gains plot:
 
@@ -551,15 +563,31 @@ A model with a higher mean score is not necessarily better — the difference mi
 
 **Paired tests compare models on the same data.** Each seed (or fold) produces a paired observation: model A's score and model B's score on the same split. Paired tests are more powerful than unpaired tests because they control for variance across splits.
 
-**How many seeds?** Hypothesis tests need enough paired observations to have statistical power. With fewer than 6 paired observations, the Wilcoxon signed-rank test cannot reach p < 0.05 — and a paired t-test with 4 degrees of freedom is barely better. You need at least 10 paired observations for minimal statistical power — this could come from 10 seeds (single train/test split per seed), 10 CV folds (single seed), or a combination. For robust, publishable comparisons, use 10 seeds × 5-fold CV = 50 paired observations (see [Experiments: reproducibility and seed protocols]({{ site.baseurl }}/docs/machine-learning/experiments/page/#seeds)). With fewer than 10 paired observations, report bootstrap confidence intervals instead of p-values.
+**How many seeds?** Hypothesis tests need enough paired observations to have statistical power. With fewer than 6 paired observations, the Wilcoxon signed-rank test cannot reach p < 0.05 — and a paired t-test with 4 degrees of freedom is barely better. You need at least 10 paired observations for minimal statistical power — this could come from 10 seeds (single train/test split per seed), 10 CV folds (single seed), or a combination. For robust, publishable comparisons, use 10 seeds × 5-fold CV (see [Experiments: reproducibility and seed protocols]({{ site.baseurl }}/docs/machine-learning/experiments/page/#seeds)), but analyse those 50 scores with the corrected resampled t-test below. CV fold scores share training data, so they are not independent observations. With fewer than 10 paired observations, report a t-based confidence interval on the mean difference and treat the result as weak evidence.
 
-**Paired t-test**: assumes the paired differences are approximately normally distributed. Use when you have 10+ seeds or folds and the differences look roughly symmetric.
+**Paired t-test**: assumes the paired differences are approximately normally distributed. Use it only when the paired observations are independent: for example, each seed has its own fresh train/test split, scored once. The differences should also look roughly symmetric.
 
 ```python
 from scipy import stats
 
-# scores_a and scores_b: arrays of metric values, one per seed/fold
+# scores_a and scores_b: arrays of metric values, one per independent seed
 t_stat, p_value = stats.ttest_rel(scores_a, scores_b)
+```
+
+**Corrected resampled t-test (Nadeau & Bengio)**: use this when scores come from repeated CV (seeds × folds). It inflates the variance to account for overlapping training sets. A naive `ttest_rel` on CV fold scores produces too many false positives.
+
+```python
+import numpy as np
+from scipy import stats
+
+def corrected_resampled_ttest(scores_a, scores_b, n_folds: int) -> tuple[float, float]:
+    """Paired t-test on repeated k-fold CV scores (one entry per seed × fold)."""
+    d = np.asarray(scores_a) - np.asarray(scores_b)
+    n = len(d)
+    test_train_ratio = 1 / (n_folds - 1)  # n_test / n_train for k-fold
+    t_stat = d.mean() / np.sqrt((1 / n + test_train_ratio) * d.var(ddof=1))
+    p_value = 2 * stats.t.sf(abs(t_stat), df=n - 1)
+    return t_stat, p_value
 ```
 
 **Wilcoxon signed-rank test**: non-parametric alternative. Makes no normality assumption. Use when the differences are clearly skewed or you cannot assume normality. Requires at least 6 paired observations to reach p < 0.05; in practice, 10+ for reasonable power.
@@ -568,12 +596,13 @@ t_stat, p_value = stats.ttest_rel(scores_a, scores_b)
 stat, p_value = stats.wilcoxon(scores_a, scores_b)
 ```
 
-**Bootstrap confidence interval**: resample the paired differences with replacement to estimate the distribution of the mean difference. Reports a confidence interval rather than a p-value — often more informative, and the best option when you have few seeds (5–10).
+**Bootstrap confidence interval**: resample the paired differences with replacement to estimate the distribution of the mean difference. Reports a confidence interval rather than a p-value, which is often more informative. Percentile bootstrap intervals are too narrow with very few observations, so prefer it when you have 20+ independent paired observations.
 
 ```python
+rng = np.random.default_rng(0)
 differences = scores_a - scores_b
 bootstrap_means = [
-    np.mean(np.random.choice(differences, size=len(differences), replace=True))
+    np.mean(rng.choice(differences, size=len(differences), replace=True))
     for _ in range(10000)
 ]
 ci_lower, ci_upper = np.percentile(bootstrap_means, [2.5, 97.5])
@@ -610,12 +639,12 @@ rejected, corrected_p, _, _ = multipletests(p_values, method="holm")
 Present results so a reviewer can assess both magnitude and confidence:
 
 ```
-Model               AUC (mean ± std)    Δ Control    p-value    Cohen's d
-─────────────────────────────────────────────────────────────────────────
-Control (XGBoost)   0.847 ± 0.012       —            —          —
-MLP                 0.839 ± 0.015       −0.008       0.142      −0.31
-LR + embeddings     0.852 ± 0.010       +0.005       0.038      +0.44
-No text features    0.821 ± 0.014       −0.026       0.003      −1.12
+Model               AUC (mean ± std)    Δ Control    p-value    p (Holm)    Cohen's d
+─────────────────────────────────────────────────────────────────────────────────────
+Control (XGBoost)   0.847 ± 0.012       —            —          —           —
+MLP                 0.839 ± 0.015       −0.008       0.142      0.142       −0.31
+LR + embeddings     0.852 ± 0.010       +0.005       0.038      0.076       +0.44
+No text features    0.821 ± 0.014       −0.026       0.003      0.009       −1.12
 ```
 
 How to read this table:
@@ -623,13 +652,14 @@ How to read this table:
 - **Mean ± std**: the average metric across seeds. The std tells you how stable the model is. A model with higher mean but much higher std may not be reliably better.
 - **Δ Control**: the difference from the baseline. Positive means better, negative means worse (assuming the metric is higher-is-better).
 - **p-value**: probability of observing this difference (or larger) by chance, assuming no real difference. Below 0.05 is the conventional threshold, but report the actual value — let the reader judge.
+- **p (Holm)**: the p-value after correcting for the three comparisons against the control. Decide significance on this column.
 - **Cohen's d**: effect size. Even if p < 0.05, a negligible effect size (|d| < 0.2) means the difference is not practically meaningful.
 
 <p align="center">
   <img src="{{ "/assets/images/plots/model_comparison.svg" | relative_url }}" alt="Forest plot comparing four models with AUC mean, standard deviation, and p-values">
 </p>
 
-In the example: "No text features" is significantly worse (p = 0.003, large effect), confirming text features are important. "LR + embeddings" is significantly better (p = 0.038, small-to-medium effect) — worth investigating further. "MLP" is not significantly different from the control (p = 0.142).
+In the example: "No text features" is significantly worse (p = 0.003, large effect), confirming text features are important. "LR + embeddings" looks better (raw p = 0.038), but it is not significant after the Holm correction (p = 0.076). Treat it as promising, and confirm it with more seeds before acting on it. "MLP" is not significantly different from the control (p = 0.142).
 
 ---
 

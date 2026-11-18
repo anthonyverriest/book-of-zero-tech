@@ -81,7 +81,7 @@ Fast retrieval uses two-tower architectures and approximate nearest neighbor sea
 - **Learned sparse retrieval**: Models like SPLADE that use transformers to predict term importance weights across the vocabulary, producing sparse vectors that capture semantic meaning while remaining compatible with inverted index infrastructure.
 - **Hybrid search**: Combining dense and sparse retrieval with score normalization and reranking. Typically improves Hit Rate@10 by 5-15% over either method alone.
 - **Cross-encoder**: Jointly encodes query-document pairs for reranking. More accurate than two-tower but ~100x slower since it cannot precompute document representations.
-- **LLM-based reranker**: Uses large language models (Cohere Rerank, RankLLaMA, RankGPT) for reranking. Achieves 2-5% higher NDCG@10 than cross-encoders on diverse benchmarks but at higher latency and cost.
+- **LLM-based reranker**: Uses large language models (RankLLaMA, RankZephyr, Qwen3-Reranker, or a general LLM prompted listwise) for reranking. Achieves 2-5% higher NDCG@10 than cross-encoders on diverse benchmarks but at higher latency and cost.
 - **ColBERT**: Late interaction architecture encoding queries and documents as token-level embeddings (N tokens x 128-dim) with MaxSim scoring. Achieves 95-98% of cross-encoder accuracy at 10x lower latency.
 - **Matryoshka embeddings (MRL)**: Embedding models trained so that the first *d* dimensions form a valid lower-dimensional embedding. Truncate 3072-dim to 256-dim with minimal accuracy drop, making ANN search up to 12x cheaper. Supported by OpenAI v3, Nomic Embed v1.5, Jina v3, Cohere Embed v4.
 - **Self-querying**: Extracting structured metadata filters from natural language queries using an LLM or NER model. "Healthcare policies from 2023" → semantic query "policies" + filter {category: "healthcare", year: >= 2023}.
@@ -223,7 +223,7 @@ def route_query(query: str, user_id: str) -> dict[str, str]:
     if intent == "greeting":
         return {"intent": intent, "response": GREETING_RESPONSE, "source": "direct"}
     if intent == "knowledge_base":
-        chunks = hybrid_search(query, documents, k=5)
+        chunks = hybrid_search(query, documents, doc_embeddings, encoder, bm25, k=5)
         return {"intent": intent, "response": llm_generate(query, chunks), "source": "vector_db"}
     if intent == "structured_data":
         result = database.execute(generate_sql(query, user_id))
@@ -367,7 +367,7 @@ scores = bm25.get_scores(query.lower().split())
 top_indices = np.argsort(scores)[::-1][:STAGE1_K]
 ```
 
-**How BM25 works**: TF rewards more term occurrences with saturation (10th occurrence adds less than 1st). IDF weights rare terms higher ("HIPAA" beats "the"). Document length normalization prevents unfair penalization of long documents. Key parameters: k1 (term saturation, default 1.2) and b (length normalization, default 0.75).
+**How BM25 works**: TF rewards more term occurrences with saturation (10th occurrence adds less than 1st). IDF weights rare terms higher ("HIPAA" beats "the"). Document length normalization penalizes long documents so they don't win just by containing more term occurrences. Key parameters: k1 (term saturation; 1.2 in Lucene/Elasticsearch, 1.5 in `rank_bm25.BM25Okapi`) and b (length normalization, default 0.75).
 
 **When BM25 works**: Exact keyword matches, named entities, acronyms. **When BM25 fails**: Semantic paraphrases.
 
@@ -503,7 +503,7 @@ FINAL_K = 5
 
 reranker = CrossEncoder(RERANKER_MODEL)
 
-candidates = hybrid_search(query, documents, k=STAGE1_K)
+candidates = hybrid_search(query, documents, doc_embeddings, encoder, bm25, k=STAGE1_K)
 candidate_docs = [documents[i] for i, score in candidates]
 
 pairs = [[query, doc] for doc in candidate_docs]
@@ -545,7 +545,8 @@ colbert_model = RAGPretrainedModel.from_pretrained(COLBERT_MODEL)
 
 stage1_results = dense_retrieval(query, k=STAGE1_K)
 stage2_results = colbert_model.rerank(query=query, documents=stage1_results, k=STAGE2_K)
-stage3_results = cross_encoder.rerank(query, stage2_results, k=FINAL_K)
+stage2_texts = [r["content"] for r in stage2_results]
+stage3_results = cross_encoder.rerank(query, stage2_texts, top_k=FINAL_K, return_documents=True)
 ```
 
 **Use ColBERT** when reranking 100-1000 candidates where cross-encoder is too slow. **Skip ColBERT** for <100 candidates (cross-encoder is fast enough) or when 6-10x storage overhead is unacceptable.
@@ -556,15 +557,17 @@ stage3_results = cross_encoder.rerank(query, stage2_results, k=FINAL_K)
 
 Cross-encoders use BERT-scale models (110M-340M parameters). LLM-based rerankers use larger language models for higher accuracy at the cost of latency and compute.
 
-| Reranker | Approach | NDCG@10 | Cost |
-|----------|----------|---------|------|
-| **ms-marco-MiniLM-L6-v2** | Cross-encoder (22M) | ~49% (BEIR avg) | Self-hosted |
-| **BGE Reranker v2-m3** | Cross-encoder (0.6B) | ~66% (BEIR avg) | Self-hosted |
-| **Cohere Rerank 3.5** | Purpose-built (API) | ~56% (BEIR avg) | API (pay-per-search) |
-| **RankLLaMA-13B** | Fine-tuned LLaMA | ~76% (DL19) | Self-hosted (GPU) |
-| **RankGPT (GPT-4)** | Listwise via LLM | ~75% (DL19) | API (high) |
+| Reranker | Approach | Relative quality | Cost |
+|----------|----------|------------------|------|
+| **ms-marco-MiniLM-L6-v2** | Cross-encoder (22M) | Baseline | Self-hosted (CPU-friendly) |
+| **BGE Reranker v2-m3** | Cross-encoder (0.6B, multilingual) | Higher | Self-hosted |
+| **Cohere Rerank 4.0** (`rerank-v4.0-fast` / `-pro`) | Purpose-built (API), 32K context | Higher | API (pay-per-search) |
+| **RankLLaMA / Qwen3-Reranker** | Fine-tuned LLM, pointwise | Highest | Self-hosted (GPU) |
+| **Listwise LLM (RankGPT-style)** | Prompted general LLM | Highest | API (high) |
 
-**How they differ**: Cross-encoders (MiniLM, BGE) score each query-document pair independently (pointwise) and are purpose-built for relevance scoring — significantly cheaper and faster than general-purpose LLM rerankers. RankLLaMA fine-tunes a 13B LLM for pointwise scoring. RankGPT passes all candidates to GPT-4 and asks it to rank them as a list (listwise), achieving the highest accuracy but at significant cost.
+Published scores use different benchmarks (BEIR averages vs TREC DL19/DL20) and are not comparable across rows; benchmark candidates on your own queries before choosing.
+
+**How they differ**: Cross-encoders (MiniLM, BGE) score each query-document pair independently (pointwise) and are purpose-built for relevance scoring — significantly cheaper and faster than general-purpose LLM rerankers. RankLLaMA fine-tunes a 13B LLM for pointwise scoring. RankGPT-style rerankers pass all candidates to a general-purpose LLM and ask it to rank them as a list (listwise), achieving the highest accuracy but at significant cost.
 
 **When to use LLM-based rerankers**: High-stakes domains (legal, medical, compliance) where accuracy improvement justifies the latency and cost. For most production systems, purpose-built rerankers (BGE, Cohere) offer the best price-performance ratio. **When to use RankGPT/RankLLaMA**: Research, low-volume high-stakes applications, or when cross-encoder accuracy is insufficient. **When to skip entirely**: Latency budget <100ms or cost-sensitive workloads.
 
@@ -597,15 +600,15 @@ Filter by document metadata before retrieval to reduce search space and improve 
 COLLECTION_NAME = "documents"
 STAGE1_K = 50
 
-results = client.search(
+results = client.query_points(
     collection_name=COLLECTION_NAME,
-    query_vector=query_embedding.tolist(),
+    query=query_embedding.tolist(),
     query_filter=Filter(must=[
         FieldCondition(key="category", match=MatchValue(value="healthcare")),
         FieldCondition(key="created_at", range=DatetimeRange(gte="2024-01-01T00:00:00Z")),
     ]),
     limit=STAGE1_K,
-)
+).points
 ```
 
 Helps when users specify constraints or for time-sensitive queries. Hurts when filters are too restrictive or metadata is incomplete.
@@ -638,12 +641,12 @@ def secure_retrieval(
         FieldCondition(key="roles", match=MatchAny(any=user_roles))
     ])
 
-    results = client.search(
+    results = client.query_points(
         collection_name=COLLECTION_NAME,
-        query_vector=encoder.encode(query).tolist(),
+        query=encoder.encode(query).tolist(),
         query_filter=rbac_filter,
         limit=k,
-    )
+    ).points
     return [{"text": hit.payload["text"], "score": hit.score} for hit in results]
 ```
 
@@ -702,12 +705,12 @@ def secure_retrieval_with_audit(
     user_id: str = payload["user_id"]
     user_roles: list[str] = payload.get("roles", [])
 
-    results = client.search(
+    results = client.query_points(
         collection_name=COLLECTION_NAME,
-        query_vector=encoder.encode(query).tolist(),
+        query=encoder.encode(query).tolist(),
         query_filter=Filter(must=[FieldCondition(key="roles", match=MatchAny(any=user_roles))]),
         limit=k,
-    )
+    ).points
 
     audit_log = {
         "timestamp": datetime.now(UTC).isoformat(),
@@ -1006,8 +1009,9 @@ Vector search with pre-filters applied
 ```
 
 ```python
-from langchain.chains.query_constructor.base import AttributeInfo
-from langchain.retrievers.self_query.base import SelfQueryRetriever
+# LangChain 1.0 moved these legacy components to the langchain-classic package
+from langchain_classic.chains.query_constructor.schema import AttributeInfo
+from langchain_classic.retrievers.self_query.base import SelfQueryRetriever
 
 metadata_field_info = [
     AttributeInfo(name="category", description="Document category", type="string"),
@@ -1327,6 +1331,10 @@ CHILD_CHUNK_OVERLAP = 50
 PARENT_CHUNK_SIZE = 2000
 PARENT_CHUNK_OVERLAP = 200
 
+# LangChain 1.0: ParentDocumentRetriever lives in langchain-classic
+from langchain_classic.retrievers import ParentDocumentRetriever
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 retriever = ParentDocumentRetriever(
     vectorstore=vectorstore, docstore=docstore,
     child_splitter=RecursiveCharacterTextSplitter.from_tiktoken_encoder(
@@ -1359,9 +1367,9 @@ def retrieve_with_metadata(
     query: str, encoder: SentenceTransformer, client: QdrantClient, k: int = 5,
 ) -> str:
     """Retrieves chunks with source metadata and formats a citation-ready LLM prompt."""
-    results = client.search(
-        collection_name=COLLECTION_NAME, query_vector=encoder.encode(query).tolist(), limit=k,
-    )
+    results = client.query_points(
+        collection_name=COLLECTION_NAME, query=encoder.encode(query).tolist(), limit=k,
+    ).points
     context = []
     for i, r in enumerate(results):
         m = r.payload
@@ -1414,9 +1422,9 @@ def retrieve_with_cache(
     cached = cache.get(query)
     if cached:
         return {"results": cached, "from_cache": True}
-    response = retriever.search(query, **kwargs)
-    cache.set(query, response["results"])
-    return {"results": response["results"], "from_cache": False}
+    results = retriever.search(query, **kwargs)
+    cache.set(query, results)
+    return {"results": results, "from_cache": False}
 ```
 
 ```python
@@ -1673,7 +1681,7 @@ def agentic_retrieve(
     max_iterations: int = MAX_AGENT_ITERATIONS,
 ) -> str:
     """Iteratively retrieves documents until the LLM has enough context to answer."""
-    tools = [{"name": "search_docs", "fn": lambda q: retriever.search(q, k=RETRIEVAL_K)}]
+    tools = [{"name": "search_docs", "fn": lambda q: retriever.search(q, final_k=RETRIEVAL_K)}]
     messages: list[dict[str, str]] = [{"role": "user", "content": question}]
     response = None
     for _ in range(max_iterations):
@@ -1691,7 +1699,7 @@ def agentic_retrieve(
 
 **Corrective RAG (CRAG)** (Yan et al., 2024): Adds a lightweight retrieval evaluator (fine-tuned T5-large) that classifies retrieved documents as Correct, Incorrect, or Ambiguous. On Correct, it applies a decompose-then-recompose algorithm to strip noise. On Incorrect, it discards retrieval and triggers web search as a fallback. On Ambiguous, it combines refined retrieval with web results. CRAG is plug-and-play — it layers on top of any existing RAG pipeline.
 
-**Frameworks**: LangGraph (graph-based agent orchestration with explicit state), LlamaIndex (AgentWorkflow with built-in retrieval tools), Haystack (lower framework overhead than LangChain), CrewAI (multi-agent collaboration), and AG2 (formerly AutoGen; community fork after Microsoft retired AutoGen in favor of Microsoft Agent Framework) all support agentic RAG patterns.
+**Frameworks**: LangGraph (graph-based agent orchestration with explicit state), LlamaIndex (AgentWorkflow with built-in retrieval tools), Haystack (lower framework overhead than LangChain), CrewAI (multi-agent collaboration), and AG2 (a community fork of AutoGen from late 2024; Microsoft has since moved AutoGen to maintenance mode in favor of Microsoft Agent Framework) all support agentic RAG patterns.
 
 **Practical recommendation**: Use pipeline RAG by default and trigger an agentic loop only when failure signals are detected — low retrieval confidence, missing citations, contradictory evidence, or user follow-ups indicating the initial answer was insufficient. This keeps most queries efficient while providing a recovery path for complex cases.
 
@@ -1783,21 +1791,29 @@ Measurable success criteria for production RAG retrieval: quality benchmarks, la
 
 Hand-labeling 500 queries is a major bottleneck. The standard approach: use LLMs to generate synthetic question-context pairs from your corpus, then evaluate retrieval automatically on every CI/CD run.
 
-**Synthetic data generation**: Chunk your corpus → for each chunk, prompt an LLM to generate 1-3 questions that the chunk answers → you now have (question, ground_truth_chunk) pairs. Ragas and LlamaIndex both automate this, with Ragas adding "evolution" strategies (simple → reasoning → multi-context) to generate diverse difficulty levels.
+**Synthetic data generation**: Chunk your corpus → for each chunk, prompt an LLM to generate 1-3 questions that the chunk answers → you now have (question, ground_truth_chunk) pairs. Ragas and LlamaIndex both automate this, with Ragas building a knowledge graph of your corpus and mixing query synthesizers (single-hop specific, multi-hop abstract, multi-hop specific) to generate diverse difficulty levels.
 
 ```python
-# Ragas synthetic test generation (API changes across versions — check docs)
+# Ragas synthetic test generation (Ragas 0.2+; tested against 0.4)
 from ragas.testset import TestsetGenerator
+from ragas.testset.synthesizers import (
+    MultiHopAbstractQuerySynthesizer,
+    MultiHopSpecificQuerySynthesizer,
+    SingleHopSpecificQuerySynthesizer,
+)
 
 TESTSET_SIZE = 200
 QUESTIONS_PER_CHUNK = 2
 
-generator = TestsetGenerator(llm=wrapped_llm)
+# wrapped_llm / wrapped_embeddings: Ragas wrappers, e.g. LangchainLLMWrapper(...)
+generator = TestsetGenerator(llm=wrapped_llm, embedding_model=wrapped_embeddings)
+query_distribution = [
+    (SingleHopSpecificQuerySynthesizer(llm=wrapped_llm), 0.5),
+    (MultiHopAbstractQuerySynthesizer(llm=wrapped_llm), 0.25),
+    (MultiHopSpecificQuerySynthesizer(llm=wrapped_llm), 0.25),
+]
 testset = generator.generate_with_langchain_docs(
-    documents, testset_size=TESTSET_SIZE,
-    # Query type distribution — class names vary by Ragas version:
-    # v0.1: simple, reasoning, multi_context (from ragas.testset.evolutions)
-    # v0.2+: SingleHopSpecificQuery, MultiHopAbstractQuery, MultiHopSpecificQuery
+    documents, testset_size=TESTSET_SIZE, query_distribution=query_distribution,
 )
 
 from llama_index.core.evaluation import generate_question_context_pairs

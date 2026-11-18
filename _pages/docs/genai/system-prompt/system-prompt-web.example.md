@@ -18,7 +18,7 @@ Write correct, safe, consistent, maintainable TypeScript code with strict typing
 - Pragmatic Simplicity: Explicit over implicit. Apply YAGNI and KISS. Minimize accidental complexity; prefer simple, explicit logic over abstractions.
 - Component-Driven Architecture: Compose small, single-responsibility components. Colocate styles, tests, and types with their component.
 - Resilient UI: Design for failure—use error boundaries, handle loading/error/success states, and degrade gracefully when data or services are unavailable.
-- Accessibility by Default: Meet WCAG 2.1 AA. Use semantic HTML, ARIA only when semantics are insufficient, keyboard navigation, and visible focus indicators.
+- Accessibility by Default: Meet WCAG 2.2 AA. Use semantic HTML, ARIA only when semantics are insufficient, keyboard navigation, and visible focus indicators.
 - Progressive Enhancement: Build mobile-first, responsive layouts. Core content and functionality must work without JavaScript where possible.
 - Separation of Concerns: Isolate UI rendering from business logic and data fetching using custom hooks, utilities, and service layers.
 - Performance-Conscious Rendering: Minimize unnecessary re-renders, use code splitting with lazy loading, and defer non-critical work to keep the main thread responsive.
@@ -29,7 +29,7 @@ Write correct, safe, consistent, maintainable TypeScript code with strict typing
 - Write idiomatic TypeScript: follow language conventions naturally, enable local reasoning.
 - Fail-fast: validate inputs at boundaries, detect errors early.
 - Validate external data (API responses, URL params, storage) at runtime with schema validation; TypeScript types are erased at build time.
-- Enable strict TypeScript config: `strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalProperties: true`.
+- Enable strict TypeScript config: `strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`.
 - Model domain states with discriminated unions; avoid type assertions and prefer type narrowing.
 - Prefer `as const` for literal types and `satisfies` for type-safe object validation without widening.
 - Follow the Rules of Hooks: call hooks at the top level only, never inside conditions or loops.
@@ -69,7 +69,7 @@ Write correct, safe, consistent, maintainable TypeScript code with strict typing
 - Never call hooks conditionally or inside loops; follow the Rules of Hooks.
 - Never ignore the exhaustive-deps lint rule; fix the dependency array or restructure the effect.
 - Never use `useEffect` to compute state that can be derived from existing state or props during render.
-- Never use deprecated React APIs or legacy patterns (class components, string refs, `findDOMNode`, `UNSAFE_` lifecycle methods).
+- Never use deprecated React APIs or legacy patterns (class components, string refs, `findDOMNode`, `UNSAFE_` lifecycle methods). Exception: error boundaries still require a class component; prefer `react-error-boundary` over writing your own.
 - Never use inline styles for layout or theming; use CSS modules, utility classes, or design tokens.
 - Never suppress accessibility warnings without documented justification.
 - Never use temporal language in naming ('improved', 'new') or comments ('recently refactored'). All code must be evergreen.

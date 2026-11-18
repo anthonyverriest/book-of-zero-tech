@@ -41,7 +41,7 @@ Docker is a practical way to package code and dependencies into a single runnabl
 
 The reference Dockerfile at `_pages/docs/containerization/docker/Dockerfile.example` expects a typical Python project layout at the project root: `pyproject.toml`, a dependency lock file (for `uv`, this is `uv.lock`), a Python package directory (controlled via the `PACKAGE_NAME` build argument), and `main.py` as the entrypoint. If your project differs, adapt `PACKAGE_NAME` and/or the container `CMD` (see [Override the command](#override-the-command)).
 
-The Dockerfile uses BuildKit mounts (`RUN --mount=...`). If BuildKit is not already enabled, prefix builds with `DOCKER_BUILDKIT=1`. Add a `.dockerignore` at the project root to keep builds fast and avoid leaking local artifacts into images (an example is provided at `_pages/docs/containerization/docker/.dockerignore.example`).
+The Dockerfile uses BuildKit mounts (`RUN --mount=...`). BuildKit is the default builder since Docker Engine 23.0; on older engines, prefix builds with `DOCKER_BUILDKIT=1`. Add a `.dockerignore` at the project root to keep builds fast and avoid leaking local artifacts into images (an example is provided at `_pages/docs/containerization/docker/.dockerignore.example`).
 
 ### Workflow
 
@@ -88,14 +88,14 @@ docker build \
 
 Optional build arguments:
 
-- `--build-arg PYTHON_VERSION=3.13`
-- `--build-arg UV_IMAGE=ghcr.io/astral-sh/uv:latest`
+- `--build-arg PYTHON_VERSION=3.14`
+- `--build-arg UV_IMAGE=ghcr.io/astral-sh/uv:0.13.9` (pinned for reproducibility; bump deliberately)
 - `--build-arg UID=90001`
 - `--build-arg PORT=8080`
 
 In enterprise environments, also consider:
 
-- Pin base images by digest for repeatable builds (for example `python:3.13-slim@sha256:<digest>`).
+- Pin base images by digest for repeatable builds (for example `python:3.14-slim@sha256:<digest>`).
 - Pin tooling images by digest (the reference exposes `UV_IMAGE` so you can set it to a version tag or digest in CI).
 - Run a vulnerability scan and produce an SBOM in CI, then sign images before publishing.
 
@@ -179,15 +179,15 @@ The reference implementation is `_pages/docs/containerization/docker/Dockerfile.
 # syntax=docker/dockerfile:1
 ```
 
-The first line of the Dockerfile is a parser directive. It instructs Docker to use the latest BuildKit frontend, ensuring that modern features like `--mount=type=cache` are available and behave consistently, regardless of the default Docker engine version on the host.
+The first line of the Dockerfile is a parser directive. It instructs Docker to use the latest stable 1.x Dockerfile frontend, ensuring that modern features like `--mount=type=cache` are available and behave consistently, regardless of the default Docker engine version on the host.
 
 ### Build arguments
 
 Build arguments let you reuse the same Dockerfile across environments and projects. In this reference file they control:
 
 ```dockerfile
-ARG PYTHON_VERSION=3.13
-ARG UV_IMAGE=ghcr.io/astral-sh/uv:latest
+ARG PYTHON_VERSION=3.14
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.9
 ARG UID=90001
 ARG PORT=8080
 ARG PACKAGE_NAME=myapp
@@ -232,6 +232,10 @@ ARG PACKAGE_NAME
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# uv: copy from the cache mount instead of hardlinking, and never download
+# a managed Python — the venv must use the base image interpreter.
+ENV UV_LINK_MODE=copy
+ENV UV_PYTHON_DOWNLOADS=0
 
 WORKDIR /app
 
@@ -448,7 +452,7 @@ docker exec -it <container> /bin/sh
 Useful checks from inside the container:
 
 - **Environment**: `env | sort` (verify variables are set as expected)
-- **Processes**: `ps aux` (confirm the app is running as `appuser`, not root)
+- **User**: `id` (confirm the app is running as `appuser`, not root; `ps` is not installed in `python:*-slim`, so use `docker top <container>` from the host to list processes)
 - **Filesystem**: `ls -la /app` (check permissions and files copied from the builder stage)
 - **Network**: `cat /etc/hosts`, `hostname -i` (verify container networking)
 

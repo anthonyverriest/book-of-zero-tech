@@ -263,12 +263,16 @@ logic rather than hand-rolling backoff. Matches the project's existing
 decorator pattern for cross-cutting concerns.
 
 ```python
+def _is_transient(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500  # 4xx are not retried
+    return isinstance(exc, httpx.TransportError)  # timeouts, connection errors
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=10),
-    retry=retry_if_exception_type(
-        (httpx.TimeoutException, httpx.HTTPStatusError)
-    ),
+    retry=retry_if_exception(_is_transient),
 )
 async def send_with_retry(
     client: httpx.AsyncClient, request: httpx.Request

@@ -134,7 +134,7 @@ An optional hardened override is provided at `_pages/docs/containerization/docke
 - **`restart`**: controls how Docker restarts containers.
   - `restart: "no"`: use for one-shot tasks and batch jobs where failure should surface immediately (and exit codes should be visible to CI/operators).
   - `restart: on-failure[:N]`: use for transient failures where retrying is reasonable; consider adding a max retry count.
-  - `restart: always`: use for long-running services that should be kept up regardless of manual stops (commonly used outside local dev).
+  - `restart: always`: use for long-running services that must restart whenever they exit. After a manual `docker stop`, the container stays stopped until the Docker daemon restarts or you start it again (commonly used outside local dev).
   - `restart: unless-stopped`: use for long-running services that should restart on failure and daemon restart, but stay stopped if an operator intentionally stops them (common for local dev stacks).
 - **`command`**: use when the runtime command differs between contexts (dev server vs worker vs batch).
 - **`container_name`**: use only when you have a strong reason to force a fixed container name. Avoid it if you want to scale services (for example `docker compose up --scale ...`) or if you run multiple copies of the same stack (to prevent name collisions).

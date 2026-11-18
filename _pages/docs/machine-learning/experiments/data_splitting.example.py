@@ -65,9 +65,11 @@ def group_cv(
     y_train: pd.Series,
     groups_train: pd.Series,
     cfg: ExperimentConfig,
+    seed: int,
 ) -> dict[str, Any]:
     """Cross-validation respecting groups within the training set."""
-    cv = GroupKFold(n_splits=cfg.cv_splits)
+    # shuffle/random_state (scikit-learn >= 1.6) make group-to-fold assignment vary by seed
+    cv = GroupKFold(n_splits=cfg.cv_splits, shuffle=True, random_state=seed)
     return cross_validate(
         pipe, X_train, y_train, cv=cv, groups=groups_train, scoring=cfg.scoring
     )
@@ -83,6 +85,9 @@ def early_stopping_cv(
 ) -> list[float]:
     """Manual CV loop with early stopping — passes eval_set directly to the estimator.
 
+    Early stopping monitors an inner split carved out of each training fold, so
+    the validation fold that is scored never influences when training stops.
+
     Scoring uses cfg.scoring via sklearn's get_scorer, so the metric must be
     compatible with predict_proba (e.g. roc_auc, average_precision, neg_log_loss).
     """
@@ -96,15 +101,22 @@ def early_stopping_cv(
         y_fold_train = y_train.iloc[train_idx]
         y_fold_val = y_train.iloc[val_idx]
 
+        # Inner split for early stopping only — never the fold we score on
+        X_fit, X_es, y_fit, y_es = train_test_split(
+            X_fold_train, y_fold_train,
+            test_size=0.1, stratify=y_fold_train, random_state=seed,
+        )
+
         if preprocessor is not None:
             pre = clone(preprocessor)
-            X_fold_train = pre.fit_transform(X_fold_train)
+            X_fit = pre.fit_transform(X_fit)
+            X_es = pre.transform(X_es)
             X_fold_val = pre.transform(X_fold_val)
 
         model = clone(estimator)
         model.fit(
-            X_fold_train, y_fold_train,
-            eval_set=[(X_fold_val, y_fold_val)],
+            X_fit, y_fit,
+            eval_set=[(X_es, y_es)],
             verbose=False,
         )
 

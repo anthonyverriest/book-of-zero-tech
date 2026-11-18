@@ -47,8 +47,10 @@ This gives you speed on `dev` and control on `staging` + `main`.
 ## Setup
 
 - **Clone** an existing repo: `git clone <repository-url>`
-- **Or init** a new repo: `git init`, then `git remote add origin <your-repo-url>`
+- **Or init** a new repo: `git init -b main` (plain `git init` still creates `master` unless `init.defaultBranch` is set), then `git remote add origin <your-repo-url>`
 - **Identity** (so commits are attributable): `git config --global user.name "Your Name"`, `git config --global user.email "your.email@example.com"`
+- **Pull behavior** (required since Git 2.33.1, otherwise `git pull` refuses to reconcile diverged branches): `git config --global pull.rebase false` (merge) or `true` (rebase)
+- **Push behavior** (optional): `git config --global push.autoSetupRemote true` so the first `git push` of a new branch sets its upstream
 - **Ignore** local state early via `.gitignore` (see `.gitignore.example`)
   
 Sometimes you will also use `.gitattributes` to standardize things like line endings, file treatment, and merge behavior (see `.gitattributes.example`).
@@ -127,9 +129,9 @@ Commit types: `feat`, `ref`, `fix`, `test`, `docs`, `chore`, `style`, `data`, `e
 
 Start from `dev` and branch:
 
-- `git checkout dev`
+- `git switch dev`
 - `git pull`
-- `git checkout -b feat/<topic>`
+- `git switch -c feat/<topic>`
 
 Work in small commits:
 
@@ -137,14 +139,14 @@ Work in small commits:
 - `git commit -m "feat: <meaningful summary>"`
 - `git push`
 
-If this is the first time you push the branch, Git may ask you to set an upstream. Copy/paste the command it suggests, then continue using `git push`.
+The first time you push the branch, use `git push -u origin HEAD` to set its upstream (or enable `push.autoSetupRemote` in Setup), then continue using `git push`.
 
 When ready:
 
-- Sync with `dev` before the PR: `git pull origin dev`
-- If you hit conflicts, resolve them, then `git add .`, `git commit -m "fix: resolve merge conflict"`, and `git push`
+- Sync with `dev` before the PR: `git fetch origin`, then `git merge origin/dev`
+- If you hit conflicts, resolve them, stage the resolved files with `git add <file>`, run `git commit` (keep Git's default merge message), then `git push`
 - Open a PR: `feat/<topic>` → `dev`
-- If `dev` moves during review, re-sync: `git pull origin dev`, resolve conflicts, then `git push`
+- If `dev` moves during review, re-sync: `git fetch origin`, `git merge origin/dev`, resolve conflicts, then `git push`
 
 ### Promote to release candidate
 
@@ -191,9 +193,9 @@ If you need to validate a migration before it merges:
 
 When production is broken, fix from `main`:
 
-- `git checkout main`
+- `git switch main`
 - `git pull`
-- `git checkout -b hotfix/<topic>`
+- `git switch -c hotfix/<topic>`
 - `git add .`
 - `git commit -m "fix: <summary>"`
 - `git push`
@@ -203,7 +205,7 @@ Then:
 - Open a PR: `hotfix/<topic>` → `main`
 - After merge, sync back so you do not reintroduce the bug:
   - `main` → `staging` (protected): open a PR `main` → `staging` and merge it
-  - `main` → `dev` (not protected): `git checkout dev`, `git pull`, `git merge main`, `git push`
+  - `main` → `dev` (not protected): `git switch dev`, `git pull`, `git merge main`, `git push`
 
 Direct merge + push is acceptable on `dev` because it is not protected.
 
@@ -215,9 +217,9 @@ When you need specific commits or files on `staging` without promoting everythin
 
 ### Cherry-pick a commit
 
-- `git checkout staging`
+- `git switch staging`
 - `git pull`
-- `git checkout -b <type>/<topic>`
+- `git switch -c <type>/<topic>`
 - `git cherry-pick -x <commit-hash>`
 - `git push`
 - Open a PR: `<type>/<topic>` → `staging`
@@ -226,10 +228,10 @@ When you need specific commits or files on `staging` without promoting everythin
 
 ### Pull a file from another branch
 
-- `git checkout staging`
+- `git switch staging`
 - `git pull`
-- `git checkout -b <type>/<topic>`
-- `git checkout dev -- path/to/file`
+- `git switch -c <type>/<topic>`
+- `git restore --source=origin/dev --staged --worktree path/to/file`
 - `git commit -m "<type>: <summary>"`
 - `git push`
 - Open a PR: `<type>/<topic>` → `staging`
@@ -240,9 +242,9 @@ Then promote `staging` → `main` via the normal release PR.
 
 ## Cleaning up history
 
-Use **squash-merge** when merging PRs to keep `dev`, `staging`, and `main` clean with one commit per feature.
+Use **squash-merge** for short-lived branches: `feat/*` → `dev` and `hotfix/*` → `main`. This keeps history clean, with one commit per feature. When merging such a PR, select **"Squash and merge"**. This collapses all commits from your feature branch into one commit with a clean message.
 
-When merging a PR, select **"Squash and merge"**. This collapses all commits from your feature branch into one commit with a clean message.
+Do **not** squash promotion PRs between long-lived branches (`dev` → `staging` → `main`) or the `main` → `dev` sync-back. Squashing rewrites the promoted commits into new ones, so the branches lose their shared history. Every later promotion then re-shows old changes and produces repeated conflicts. Use **"Create a merge commit"** (or a fast-forward) for those PRs.
 
 Commit freely during development, then squash everything when merging.
 

@@ -95,6 +95,7 @@ import re
 
 from marker.config.parser import ConfigParser
 from marker.converters.pdf import PdfConverter
+from marker.models import create_model_dict
 
 PAGE_NUMBER_PATTERN = r'\b[Pp]age \d+\b'
 PAGE_RANGE_PATTERN = r'\b\d+ of \d+\b'
@@ -109,7 +110,11 @@ def clean_pdf_text(pdf_path: str) -> str:
     """Extract text from a PDF and strip common layout artifacts."""
     assert pdf_path, "pdf_path must be a non-empty string"
     config_parser = ConfigParser({"output_format": "markdown"})
-    converter = PdfConverter(config=config_parser.generate_config_dict())
+    converter = PdfConverter(
+        config=config_parser.generate_config_dict(),
+        artifact_dict=create_model_dict(),
+        renderer=config_parser.get_renderer(),
+    )
     rendered = converter(pdf_path)
     text = rendered.markdown
 
@@ -137,7 +142,12 @@ from azure.core.credentials import AzureKeyCredential
 client = DocumentIntelligenceClient(endpoint="<endpoint>", credential=AzureKeyCredential("<key>"))
 
 with open("financial_report.pdf", "rb") as f:
-    poller = client.begin_analyze_document("prebuilt-layout", body=f, content_type="application/pdf")
+    poller = client.begin_analyze_document(
+        "prebuilt-layout",
+        body=f,
+        content_type="application/pdf",
+        output_content_format="markdown",  # default is plain text
+    )
 
 result = poller.result()
 markdown = result.content
@@ -262,7 +272,7 @@ Use document structure (markdown headers, code syntax, PDF layout) to guide spli
 #### Markdown documents
 
 ```python
-from langchain.text_splitter import MarkdownHeaderTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter
 
 markdown_splitter = MarkdownHeaderTextSplitter(
     headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
@@ -301,20 +311,22 @@ Keeps tables intact, preserves section hierarchy. Use for scientific papers, rep
 Split when the topic changes using embedding similarity, not at fixed intervals.
 
 ```python
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import SemanticChunker
+from langchain_experimental.text_splitter import SemanticChunker
+from langchain_openai import OpenAIEmbeddings
 
 semantic_splitter = SemanticChunker(
     embeddings=OpenAIEmbeddings(),
     breakpoint_threshold_type="percentile",
-    breakpoint_threshold_amount=25,
+    breakpoint_threshold_amount=95,  # split where the distance exceeds the 95th percentile
 )
 semantic_chunks = semantic_splitter.split_text(document_text)
 ```
 
+> `langchain-experimental` is no longer actively maintained. Pin its version, or port the ~100-line algorithm described below into your own code.
+
 The algorithm splits text into sentences, then combines each sentence with its neighbors (a buffer window of 1-2 sentences on each side) before embedding. This ensures each embedding captures local context, not just an isolated sentence. It then computes cosine similarities between consecutive combined-sentence embeddings and splits where similarity drops below the threshold (a topic boundary). Works well for heterogeneous documents where structure doesn't match semantics (transcripts, web scrapes, unformatted reports).
 
-**Cost**: 10-100x slower than recursive splitting. For 10K words (100 sentences), that's 100 embedding calls. Run an ablation: if semantic chunking improves Hit Rate@5 by <5% over recursive splitting, it's not worth it.
+**Cost**: 10-100x slower than recursive splitting. For 10K words (~500 sentences), that's ~500 sentence embeddings (batched). Run an ablation: if semantic chunking improves Hit Rate@5 by <5% over recursive splitting, it's not worth it.
 
 ### Agentic splitting
 
@@ -322,7 +334,7 @@ Use an LLM to decide chunk boundaries. Experimental and expensive ($0.01-0.10 pe
 
 {% raw %}
 ```python
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 prompt = PromptTemplate.from_template("""
 Split this text into coherent chunks of 300-800 tokens at topic boundaries.
@@ -415,9 +427,9 @@ This indexing is expensive: multiple LLM calls per chunk, plus summary generatio
 
 **FastGraphRAG variant**: replaces LLM-based entity extraction with NLP libraries (spaCy, NLTK) to extract noun phrases. Cheaper and faster, but misses implicit relationships and domain-specific entities that require reasoning.
 
-**When to use**: corpora where the answer requires traversing relationships (org charts, supply chains, investigative research). Standard vector RAG outperforms GraphRAG on factoid and lookup queries. For retrieval-side details — local vs global search, community summary retrieval, hybrid graph+dense queries — see [RAG Retrieval: GraphRAG]({{ site.baseurl }}/docs/genai/rag/retrieval/page/#graphrag).
+**When to use**: corpora where the answer requires traversing relationships (org charts, supply chains, investigative research). Standard vector RAG outperforms GraphRAG on factoid and lookup queries. For retrieval-side details — local vs global search, community summary retrieval, hybrid graph+dense queries — see [RAG Retrieval: GraphRAG]({{ site.baseurl }}/docs/genai/rag/retrieval/page/#graphrag-knowledge-graph-retrieval).
 
-**Cost warning**: rebuilding a GraphRAG index is not incremental. Adding documents requires re-running community detection over the entire graph. Only adopt GraphRAG if your use case requires structural reasoning and you have budget for regular full rebuilds.
+**Cost warning**: since GraphRAG 1.0, `graphrag update` processes only new documents and merges them into the existing index, but community detection and community summaries are still recomputed over the whole graph. Only adopt GraphRAG if your use case requires structural reasoning and you have budget for regular re-summarization.
 
 ### Visual-native indexing (ColPali)
 
@@ -469,15 +481,32 @@ Choose based on these criteria:
 Fine-tune when your domain diverges from training data (medical jargon, legal language, internal terminology) and you have 1000+ labeled query-document pairs.
 
 ```python
-from sentence_transformers import SentenceTransformer, InputExample, losses
-from torch.utils.data import DataLoader
+from datasets import Dataset
+from sentence_transformers import (
+    SentenceTransformer,
+    SentenceTransformerTrainer,
+    SentenceTransformerTrainingArguments,
+    losses,
+)
 
-model = SentenceTransformer('bge-large-en-v1.5')
-train_examples = [
-    InputExample(texts=["what is HIPAA?", "HIPAA is the Health Insurance Portability...", "The capital of France..."]),
-]
-train_dataloader = DataLoader(train_examples, shuffle=True, batch_size=16)
-model.fit(train_objectives=[(train_dataloader, losses.TripletLoss(model))], epochs=3)
+model = SentenceTransformer("BAAI/bge-large-en-v1.5")
+train_dataset = Dataset.from_dict({
+    "anchor": ["what is HIPAA?"],
+    "positive": ["HIPAA is the Health Insurance Portability..."],
+    "negative": ["The capital of France..."],
+})
+args = SentenceTransformerTrainingArguments(
+    output_dir="models/bge-finetuned",
+    num_train_epochs=3,
+    per_device_train_batch_size=16,
+)
+trainer = SentenceTransformerTrainer(
+    model=model,
+    args=args,
+    train_dataset=train_dataset,
+    loss=losses.MultipleNegativesRankingLoss(model),  # uses in-batch negatives too
+)
+trainer.train()
 ```
 
 Skip if pre-trained models already hit your quality target or your domain is covered by general web text.
@@ -577,7 +606,7 @@ for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
 
 ### Contextual chunk headers (CCH)
 
-Chunks often lack context about where they came from. "Nike has committed to reducing emissions by 50%" is meaningless without knowing it's from the "Nike Climate Impact Report 2025" under "Environmental Commitments." CCH prepends document and section context to chunks before embedding, significantly improving retrieval precision for ambiguous chunks. Anthropic's [contextual retrieval](https://www.anthropic.com/news/contextual-retrieval) showed ~49% reduction in retrieval failures using this approach.
+Chunks often lack context about where they came from. "Nike has committed to reducing emissions by 50%" is meaningless without knowing it's from the "Nike Climate Impact Report 2025" under "Environmental Commitments." CCH prepends document and section context to chunks before embedding, significantly improving retrieval precision for ambiguous chunks. CCH is a cheap, rule-based approximation of Anthropic's [contextual retrieval](https://www.anthropic.com/news/contextual-retrieval), which uses an LLM to write chunk-specific context. In Anthropic's tests, contextual embeddings alone reduced top-20 retrieval failures by 35%, contextual embeddings plus contextual BM25 by 49%, and adding reranking by 67%. Expect smaller gains from headers alone, and measure on your own corpus.
 
 **How it works**: Parse document structure, prepend context header (title + section hierarchy) to each chunk before embedding. Store both contextualized text (for embedding/search) and original text (for LLM generation).
 
@@ -652,7 +681,7 @@ for chunk, embedding in zip(chunks, embeddings):
         )]
     )
 
-query_results = client.search(collection_name="documents", query_vector=query_embedding, limit=5)
+query_results = client.query_points(collection_name="documents", query=query_embedding, limit=5).points
 llm_context = [result.payload['text_for_generation'] for result in query_results]
 ```
 
@@ -705,7 +734,7 @@ client.create_collection(
     vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
 )
 client.upsert(collection_name="documents", points=points)
-results = client.search(collection_name="documents", query_vector=query_embedding.tolist(), limit=5)
+results = client.query_points(collection_name="documents", query=query_embedding.tolist(), limit=5).points
 ```
 
 Use in-memory for <1M chunks, single-machine, <10ms latency requirements. Use persistent for >1M chunks, metadata filtering, multi-service access.
@@ -731,12 +760,18 @@ Quantization compresses vector representations to reduce memory and speed up dis
 **Scalar Quantization (SQ)**: maps each float32 component (4 bytes) to int8 (1 byte) — 4× memory reduction. Distance calculations on int8 values are faster and remain highly accurate. Recall loss is typically <2% compared to float32. This is the **production default** in Qdrant and Milvus when memory reduction is needed.
 
 ```python
-from qdrant_client.models import ScalarQuantizationConfig, ScalarType, QuantizationConfig
+from qdrant_client.models import (
+    Distance,
+    ScalarQuantization,
+    ScalarQuantizationConfig,
+    ScalarType,
+    VectorParams,
+)
 
 client.create_collection(
     collection_name="documents",
     vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
-    quantization_config=QuantizationConfig(
+    quantization_config=ScalarQuantization(
         scalar=ScalarQuantizationConfig(type=ScalarType.INT8, quantile=0.99, always_ram=True)
     ),
 )
@@ -744,7 +779,7 @@ client.create_collection(
 
 **Product Quantization (PQ)**: divides a vector into M sub-vectors, quantizes each sub-vector using a learned codebook of K centroids, and stores only the centroid index (1 byte per sub-vector). A 1536-dim float32 vector (6 KB) can compress to 96 bytes — 64× reduction. Recall loss is significant (~10–20%) and build time is slow (codebook training requires a representative sample of your corpus). Use only when RAM is the hard constraint at billion scale.
 
-**Binary Quantization (BQ)**: maps each float32 to a single bit (1/32 size). Recall loss is high for general embeddings but near-SQ for high-dimensional models trained with high-norm separation (e.g. OpenAI `text-embedding-3-large`, Cohere `embed-v3`). Qdrant-specific. 40× speedup for qualified models.
+**Binary Quantization (BQ)**: maps each float32 to a single bit (1/32 size). Recall loss is high for general embeddings but close to SQ for some high-dimensional models (e.g. OpenAI `text-embedding-3-large`, Cohere Embed v4) when combined with oversampling and rescoring against the original vectors. Supported by Qdrant, Weaviate, Milvus, Elasticsearch (BBQ) and pgvector. Up to ~40× faster search for compatible models; verify recall on your corpus.
 
 | Method | Compression | Recall loss | Build speed | Best for |
 |--------|-------------|-------------|-------------|----------|
@@ -832,17 +867,18 @@ import numpy as np
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 
-CHUNK_SIZE = 500
-CHUNK_OVERLAP = 100
+CHUNK_OVERLAP = 64
 
 documents = ["RAG stands for Retrieval-Augmented Generation...", "..."]
 
-splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-    encoding_name="cl100k_base", chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
+model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+# Size chunks in the embedding model's own tokens: all-mpnet-base-v2 truncates
+# anything beyond max_seq_length (384) without warning.
+splitter = RecursiveCharacterTextSplitter.from_huggingface_tokenizer(
+    model.tokenizer, chunk_size=model.max_seq_length - 2, chunk_overlap=CHUNK_OVERLAP
 )
 chunks = splitter.split_text("\n\n".join(documents))
 
-model = SentenceTransformer('all-mpnet-base-v2')
 embeddings = model.encode(chunks, show_progress_bar=True)
 
 index = faiss.IndexFlatL2(embeddings.shape[1])
@@ -867,8 +903,7 @@ from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
-CHUNK_SIZE = 500
-CHUNK_OVERLAP = 100
+CHUNK_OVERLAP = 64
 QDRANT_PORT = 6333
 POINT_ID_MODULUS = 2**63
 
@@ -877,10 +912,14 @@ class ProductionIndexer:
     """Chunk, embed, and upsert documents into a Qdrant collection with idempotency."""
 
     def __init__(self, collection_name: str = "documents"):
-        self.splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-            encoding_name="cl100k_base", chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
+        self.model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+        # Count tokens with the embedding model's own tokenizer and stay under its
+        # max_seq_length (384 for all-mpnet-base-v2); longer chunks are silently truncated.
+        self.splitter = RecursiveCharacterTextSplitter.from_huggingface_tokenizer(
+            self.model.tokenizer,
+            chunk_size=self.model.max_seq_length - 2,  # leave room for special tokens
+            chunk_overlap=CHUNK_OVERLAP,
         )
-        self.model = SentenceTransformer('all-mpnet-base-v2')
         self.client = QdrantClient("localhost", port=QDRANT_PORT)
         self.collection_name = collection_name
 
@@ -942,6 +981,12 @@ def index_batch(self, documents: list[dict]) -> dict:
 **Multi-document type indexer**: Route to appropriate splitters based on document type.
 
 ```python
+from langchain_text_splitters import (
+    Language,
+    MarkdownHeaderTextSplitter,
+    RecursiveCharacterTextSplitter,
+)
+
 try:
     from docling.document_converter import DocumentConverter
 except ImportError:
@@ -951,21 +996,21 @@ CODE_CHUNK_SIZE = 1000
 CODE_CHUNK_OVERLAP = 200
 
 
-class MultiTypeIndexer:
-    """Route documents to format-specific splitters, delegating indexing to ProductionIndexer."""
+class MultiTypeIndexer(ProductionIndexer):
+    """Override ProductionIndexer.split so index_document() routes by doc_type."""
 
     def __init__(self, collection_name: str = "documents"):
-        self.indexer = ProductionIndexer(collection_name)
+        super().__init__(collection_name)
         self.markdown_splitter = MarkdownHeaderTextSplitter(
             headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
             strip_headers=False,
         )
         self.code_splitter = RecursiveCharacterTextSplitter.from_language(
-            language="python", chunk_size=CODE_CHUNK_SIZE, chunk_overlap=CODE_CHUNK_OVERLAP,
+            language=Language.PYTHON, chunk_size=CODE_CHUNK_SIZE, chunk_overlap=CODE_CHUNK_OVERLAP,
         )
 
     def split(self, source: str, metadata: dict) -> list[str]:
-        """Split source text using a format-specific strategy based on doc_type metadata."""
+        """Split by doc_type. For "pdf", `source` is a file path or URL, not extracted text."""
         doc_type = metadata.get("doc_type", "text")
         if doc_type == "markdown":
             return [chunk.page_content if hasattr(chunk, 'page_content') else str(chunk)
@@ -979,7 +1024,7 @@ class MultiTypeIndexer:
             markdown = result.document.export_to_markdown()
             return [chunk.page_content if hasattr(chunk, 'page_content') else str(chunk)
                     for chunk in self.markdown_splitter.split_text(markdown)]
-        return self.indexer.split(source, metadata)
+        return super().split(source, metadata)
 ```
 
 Type-specific splitting prevents splitting mid-table (PDF), mid-function (code), or losing header context (markdown). Tag chunks with `doc_type` for type filtering at retrieval time.

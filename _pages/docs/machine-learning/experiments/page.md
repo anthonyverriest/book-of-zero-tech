@@ -157,13 +157,13 @@ A single seed tells you the pipeline runs end-to-end. It does not tell you wheth
 
 **Running multiple seeds is mandatory for publishable results.** 3–5 seeds is often insufficient: conclusions can flip with different seeds, and statistical power is too low to detect real differences.
 
-For classical ML with cross-validation, each seed × fold combination produces an observation, so K-fold CV × S seeds gives K × S paired data points. With 5-fold CV and 10 seeds you get 50 paired observations — enough for robust statistical testing.
+For classical ML with cross-validation, each seed × fold combination produces a score, so K-fold CV × S seeds gives K × S paired scores. These scores are **not independent**: training sets overlap across folds and seeds reuse the same data. A plain paired t-test or Wilcoxon test on all 50 scores from 10 seeds × 5 folds understates the variance and produces too many false positives. Use the corrected resampled t-test (Nadeau & Bengio) on those scores, as shown in [Evaluation: statistical significance]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#statistical-significance).
 
 <p align="center">
   <img src="{{ "/assets/images/plots/seed_variance.svg" | relative_url }}" alt="Box plot showing ROC AUC score distributions across 10 seeds for three models">
 </p>
 
-| Setting | Minimum seeds | Paired observations (5-fold CV) |
+| Setting | Minimum seeds | Paired scores (5-fold CV) |
 |---------|--------------|-------------------------------|
 | Exploratory | 5 | 25 |
 | Publishable comparison | 10 | 50 |
@@ -264,8 +264,8 @@ X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
 y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
 # Cross-validation respecting groups
-cv = GroupKFold(n_splits=cfg.cv_splits)
-results = cross_validate(pipe, X_train, y_train, cv=cv, groups=groups[train_idx], scoring=cfg.scoring)
+cv = GroupKFold(n_splits=cfg.cv_splits, shuffle=True, random_state=seed)  # shuffle: scikit-learn >= 1.6
+results = cross_validate(pipe, X_train, y_train, cv=cv, groups=groups.iloc[train_idx], scoring=cfg.scoring)
 ```
 
 If your data has no natural grouping (each row is an independent observation), standard `train_test_split` and `StratifiedKFold` are correct. When groups and class imbalance both matter, use `StratifiedGroupKFold`.
@@ -274,9 +274,9 @@ If your data has no natural grouping (each row is an independent observation), s
 
 Iterative algorithms like gradient boosting (XGBoost, LightGBM) or deep learning require a separate validation set inside the training loop to monitor performance and halt training before overfitting begins. This is distinct from the validation folds used in cross-validation for model selection — early stopping uses a dedicated split within each training fold.
 
-When using cross-validation, passing this internal validation set through a scikit-learn `Pipeline` can be notoriously tricky, as pipelines do not natively map sample-level `fit_params` to the estimator for the held-out fold.
+Never use the CV validation fold as the early-stopping set: the model would stop at the iteration that scores best on that fold, and the fold score would be biased upward. Carve an inner early-stopping split out of each training fold instead.
 
-To implement early stopping during cross-validation properly, you must either manually iterate over the fold indices and pass `eval_set=[(X_val, y_val)]` directly to the estimator's `fit` method, or use a library-specific integration (like `xgboost.sklearn`):
+`cross_validate` cannot do this for you: a `Pipeline` does not transform an `eval_set` passed as a fit parameter, and the inner split has to be recomputed per fold. Iterate over the folds manually:
 
 ```python
 scorer = get_scorer(cfg.scoring)
@@ -286,18 +286,24 @@ for fold, (train_idx, val_idx) in enumerate(cv.split(X_train, y_train)):
     X_fold_train, X_fold_val = X_train.iloc[train_idx], X_train.iloc[val_idx]
     y_fold_train, y_fold_val = y_train.iloc[train_idx], y_train.iloc[val_idx]
 
+    # Inner split used only to decide when to stop
+    X_fit, X_es, y_fit, y_es = train_test_split(
+        X_fold_train, y_fold_train, test_size=0.1, stratify=y_fold_train, random_state=seed,
+    )
+
     scaler = StandardScaler()
-    X_fold_train_scaled = scaler.fit_transform(X_fold_train)
+    X_fit_scaled = scaler.fit_transform(X_fit)
+    X_es_scaled = scaler.transform(X_es)
     X_fold_val_scaled = scaler.transform(X_fold_val)
 
     model = XGBClassifier(**cfg.model.params, random_state=seed, early_stopping_rounds=20)
     model.fit(
-        X_fold_train_scaled, y_fold_train,
-        eval_set=[(X_fold_val_scaled, y_fold_val)],
+        X_fit_scaled, y_fit,
+        eval_set=[(X_es_scaled, y_es)],
         verbose=False,
     )
 
-    score = scorer(model, X_fold_val_scaled, y_fold_val)
+    score = scorer(model, X_fold_val_scaled, y_fold_val)  # fold never seen during fitting
 ```
 
 The full early stopping CV loop is in `data_splitting.example.py` (see [Resources](#resources)).
@@ -680,12 +686,14 @@ done
 
 A shell runner with config validation is in `ablation.example.sh` (see [Resources](#resources)). Report ablation results as a table: each row is a variant, columns show the metric mean ± std, and the delta from the control. This is the format reviewers expect:
 
-| Variant | AUC (mean ± std) | Δ vs. control | p-value |
-|---------|-------------------|---------------|---------|
-| Full system (control) | 0.891 ± 0.012 | — | — |
-| − text features | 0.864 ± 0.015 | −0.027 | 0.003 |
-| − interaction terms | 0.887 ± 0.013 | −0.004 | 0.42 |
-| − feature selection | 0.879 ± 0.014 | −0.012 | 0.04 |
+| Variant | AUC (mean ± std) | Δ vs. control | p-value | p (Holm) |
+|---------|-------------------|---------------|---------|----------|
+| Full system (control) | 0.891 ± 0.012 | — | — | — |
+| − text features | 0.864 ± 0.015 | −0.027 | 0.003 | 0.009 |
+| − interaction terms | 0.887 ± 0.013 | −0.004 | 0.42 | 0.42 |
+| − feature selection | 0.879 ± 0.014 | −0.012 | 0.04 | 0.08 |
+
+With three comparisons against the control, apply the Holm correction before you call a result significant. Here only removing text features is significant. Removing feature selection (p = 0.04 raw, 0.08 corrected) is suggestive, but not yet conclusive.
 
 <p align="center">
   <img src="{{ "/assets/images/plots/ablation.svg" | relative_url }}" alt="Ablation study bar chart showing AUC delta vs control with significance markers">
