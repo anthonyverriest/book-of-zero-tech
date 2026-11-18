@@ -575,7 +575,7 @@ Published scores use different benchmarks (BEIR averages vs TREC DL19/DL20) and 
 
 ## Search-time index tuning
 
-Vector indexes are built during indexing (see [RAG Indexing Vector Storage]({{ site.baseurl }}/docs/genai/rag/indexing/page/#vector-storage)). At search time, tune parameters to balance recall and latency.
+Vector indexes are built during indexing (see [RAG Indexing Vector Storage]({{ site.baseurl }}/docs/genai/rag/indexing/page/#part-5-a-vector-database-trades-a-little-recall-for-a-lot-of-speed)). At search time, tune parameters to balance recall and latency.
 
 ```python
 EFSEARCH_HIGH_RECALL = 50  # Default 16; increase for better recall at higher latency
@@ -737,7 +737,7 @@ def secure_retrieval_with_audit(
 
 **Pitfalls**: Missing RBAC metadata at indexing time forces reindexing. Trusting unvalidated JWT tokens is a critical vulnerability. Permission drift between IdP and vector DB causes stale access — sync regularly.
 
-**Cross-references**: See [indexing metadata strategy]({{ site.baseurl }}/docs/genai/rag/indexing/page/#metadata-strategy) for structuring RBAC fields at indexing time.
+**Cross-references**: See [indexing metadata strategy]({{ site.baseurl }}/docs/genai/rag/indexing/page/#part-4-metadata-lets-retrieval-find-the-right-text-from-the-right-source) for structuring RBAC fields at indexing time.
 
 ---
 
