@@ -832,7 +832,7 @@ Requires labeled query-document pairs.
 
 **MRR (Mean Reciprocal Rank)**: Average of 1/rank for the first correct chunk. 1.0 = always rank 1.
 
-**NDCG@k**: Accounts for graded relevance. See [ML Evaluation]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#workflow-ranking) for details.
+**NDCG@k**: Accounts for graded relevance. See [ML Evaluation]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#part-5-ranking-metrics-care-about-position) for details.
 
 ### Evaluation workflow
 

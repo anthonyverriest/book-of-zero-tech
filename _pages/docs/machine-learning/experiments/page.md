@@ -762,7 +762,7 @@ The full held-out evaluation, including thresholded metrics and MLflow logging, 
 
 How do you read the result? If the mean test score is substantially lower than the cross-validation score, the model is overfitting to the training distribution. If the standard deviation across seeds is large, the model is unstable.
 
-Either way, do not go back and tune. That turns the test set into a validation set. This held-out score is the final check: it confirms the model generalizes. For classifiers, `test.example.py` evaluates at a given threshold; see [Evaluation: threshold tuning]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#threshold-tuning-and-evaluation) for how to choose that threshold.
+Either way, do not go back and tune. That turns the test set into a validation set. This held-out score is the final check: it confirms the model generalizes. For classifiers, `test.example.py` evaluates at a given threshold; see [Evaluation: threshold tuning]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#part-3-the-threshold-turns-scores-into-decisions) for how to choose that threshold.
 
 A few more things to know about search:
 
@@ -783,7 +783,7 @@ The full fraud system has text features, interaction terms, and a feature select
 1. **Start from the full system**: the configuration with all components enabled. This is your control.
 2. **Remove one component at a time** and re-run. Each ablation variant changes exactly one thing, so the effect is attributable. This is **leave-one-component-out (LOCO)** ablation, the standard approach.
 3. **Run each variant across multiple seeds** (same seeds for all variants).
-4. **Compare to the control** using the same metric and statistical test (see [Evaluation: comparing results]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#comparing-results)).
+4. **Compare to the control** using the same metric and statistical test (see [Evaluation: comparing results]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#part-8-a-higher-mean-is-not-a-win-until-you-test-it)).
 
 What LOCO does not tell you: interaction effects. If two components are individually weak but jointly critical (synergy), or if one component compensates when another is removed (masquerade), LOCO will miss it. Use a factorial design when you suspect interactions.
 
@@ -822,7 +822,7 @@ Now read the table. Only removing text features is significant (0.009 < 0.05). R
   <img src="{{ "/assets/images/plots/ablation.svg" | relative_url }}" alt="Ablation study bar chart showing AUC delta vs control with significance markers">
 </p>
 
-For statistical tests and how to read comparison tables, see [Evaluation: comparing results]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#comparing-results).
+For statistical tests and how to read comparison tables, see [Evaluation: comparing results]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#part-8-a-higher-mean-is-not-a-win-until-you-test-it).
 
 **Remove one component at a time across the same seeds, and correct for the number of comparisons before you call anything significant.**
 
